@@ -38,6 +38,10 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleResetPassword(payload)));
       case 'toggleUserStatus':
         return corsResponse(JSON.stringify(handleToggleUserStatus(payload)));
+      case 'getFootballMatches':
+        return corsResponse(JSON.stringify(handleGetFootballMatches(payload)));
+      case 'getFootballMatch':
+        return corsResponse(JSON.stringify(handleGetFootballMatch(payload)));
       default:
         return corsResponse(JSON.stringify({ success: false, message: 'Action không hợp lệ' }));
     }
@@ -134,13 +138,20 @@ function handleLogin(payload) {
   };
 }
 
-function fetchMatchFromApi(matchId) {
+function footballApiGet(path) {
   var apiKey = getFootballApiKey();
   if (!apiKey) {
     throw new Error('Chưa cấu hình FOOTBALL_API_KEY trong Script Properties');
   }
 
-  var url = 'https://api.football-data.org/v4/matches/' + encodeURIComponent(matchId);
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'fd_' + path;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  var url = 'https://api.football-data.org/v4' + path;
   var response = UrlFetchApp.fetch(url, {
     method: 'get',
     headers: { 'X-Auth-Token': apiKey },
@@ -148,11 +159,61 @@ function fetchMatchFromApi(matchId) {
   });
 
   var code = response.getResponseCode();
+  var body = response.getContentText();
+
   if (code !== 200) {
-    throw new Error('Không thể lấy thông tin trận đấu (HTTP ' + code + ')');
+    if (code === 403) {
+      throw new Error('FOOTBALL_API_KEY không hợp lệ hoặc season không hỗ trợ. Dùng season=2026.');
+    }
+    if (code === 429) {
+      throw new Error('Vượt giới hạn football-data.org API. Đợi 1 phút rồi thử lại.');
+    }
+    throw new Error('football-data.org API lỗi HTTP ' + code + ': ' + body);
   }
 
-  return JSON.parse(response.getContentText());
+  var data = JSON.parse(body);
+  cache.put(cacheKey, JSON.stringify(data), 300);
+  return data;
+}
+
+function fetchMatchFromApi(matchId) {
+  return footballApiGet('/matches/' + encodeURIComponent(matchId));
+}
+
+function handleGetFootballMatches(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var competition = String(payload.competition || 'WC');
+  var season = String(payload.season || '2026');
+
+  try {
+    var data = footballApiGet('/competitions/' + competition + '/matches?season=' + season);
+    return { success: true, matches: data.matches || [] };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+function handleGetFootballMatch(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var matchId = String(payload.matchId || '');
+  if (!matchId) {
+    return { success: false, message: 'Thiếu matchId' };
+  }
+
+  try {
+    var match = footballApiGet('/matches/' + encodeURIComponent(matchId));
+    return { success: true, match: match };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
 }
 
 function isMatchOpenForPrediction(match) {

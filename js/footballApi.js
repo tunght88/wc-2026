@@ -23,6 +23,14 @@ const STAGE_LABELS = {
   THIRD_PLACE: 'Tranh hạng 3',
 };
 
+function getFootballSession() {
+  const session = getSession();
+  if (!session) {
+    throw new Error('Chưa đăng nhập');
+  }
+  return session;
+}
+
 function getCachedMatches() {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
@@ -45,24 +53,16 @@ function setCachedMatches(matches) {
   );
 }
 
-async function footballFetch(endpoint) {
-  const response = await fetch(FOOTBALL_API_BASE + endpoint, {
-    headers: { 'X-Auth-Token': FOOTBALL_API_KEY },
-  });
-
-  if (!response.ok) {
-    throw new Error('Lỗi football-data.org API (HTTP ' + response.status + ')');
-  }
-
-  return response.json();
-}
-
 async function getMatches() {
   const cached = getCachedMatches();
   if (cached) return cached;
 
-  const data = await footballFetch(
-    '/competitions/' + WC_COMPETITION_CODE + '/matches?season=' + WC_SEASON
+  const session = getFootballSession();
+  const data = await getFootballMatches(
+    session.username,
+    session.passwordHash,
+    WC_COMPETITION_CODE,
+    WC_SEASON
   );
   const matches = data.matches || [];
   setCachedMatches(matches);
@@ -70,8 +70,9 @@ async function getMatches() {
 }
 
 async function getMatch(matchId) {
-  const data = await footballFetch('/matches/' + matchId);
-  return data;
+  const session = getFootballSession();
+  const data = await getFootballMatch(session.username, session.passwordHash, matchId);
+  return data.match;
 }
 
 async function getFinishedMatches() {

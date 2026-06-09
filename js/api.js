@@ -73,3 +73,20 @@ async function toggleUserStatus(adminUsername, adminPasswordHash, targetUsername
     targetUsername,
   });
 }
+
+async function getFootballMatches(username, passwordHash, competition, season) {
+  return postAction('getFootballMatches', {
+    username,
+    passwordHash,
+    competition,
+    season,
+  });
+}
+
+async function getFootballMatch(username, passwordHash, matchId) {
+  return postAction('getFootballMatch', {
+    username,
+    passwordHash,
+    matchId,
+  });
+}
