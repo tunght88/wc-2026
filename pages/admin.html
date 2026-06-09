@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - WC 2026 Predictions</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="wc-header">
+    <div class="wc-header-inner">
+      <div class="wc-logo">
+        <div class="wc-logo-icon">⚽</div>
+        <div>
+          <div class="wc-title">WC 2026 Predictions</div>
+          <div class="wc-subtitle">FIFA World Cup 2026</div>
+        </div>
+      </div>
+      <span class="user-badge" id="user-info"></span>
+      <nav id="main-nav"></nav>
+    </div>
+  </header>
+
+  <main class="wc-main">
+    <h1 class="page-title">Quản trị</h1>
+    <div id="error-banner" class="error-banner hidden"></div>
+
+    <section class="admin-section">
+      <div class="wc-card">
+        <h2 class="wc-card-title">Tạo người dùng mới</h2>
+        <form id="create-user-form" class="admin-form">
+          <div class="form-group">
+            <label class="form-label" for="new-username">Username</label>
+            <input type="text" id="new-username" class="form-input" required pattern="[a-zA-Z0-9_]+">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="new-fullname">Họ tên</label>
+            <input type="text" id="new-fullname" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="new-password">Mật khẩu</label>
+            <input type="password" id="new-password" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="new-role">Role</label>
+            <select id="new-role" class="form-select">
+              <option value="USER">USER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+          </div>
+          <div class="form-group flex items-end">
+            <button type="submit" class="btn btn-primary">Tạo user</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <div class="wc-card">
+        <h2 class="wc-card-title">Quản lý người dùng</h2>
+        <div id="users-table"></div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <div class="wc-card">
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+          <h2 class="wc-card-title mb-0 border-0 pb-0">Toàn bộ dự đoán</h2>
+          <button type="button" id="export-csv-btn" class="btn btn-secondary btn-sm">Xuất CSV</button>
+        </div>
+        <div id="predictions-table"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="loading" class="loading-overlay hidden">
+    <div class="spinner"></div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/footballApi.js"></script>
+  <script src="../js/admin.js"></script>
+</body>
+</html>

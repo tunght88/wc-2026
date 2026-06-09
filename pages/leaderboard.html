@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bảng xếp hạng - WC 2026 Predictions</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="wc-header">
+    <div class="wc-header-inner">
+      <div class="wc-logo">
+        <div class="wc-logo-icon">⚽</div>
+        <div>
+          <div class="wc-title">WC 2026 Predictions</div>
+          <div class="wc-subtitle">FIFA World Cup 2026</div>
+        </div>
+      </div>
+      <span class="user-badge" id="user-info"></span>
+      <nav id="main-nav"></nav>
+    </div>
+  </header>
+
+  <main class="wc-main">
+    <h1 class="page-title">Bảng xếp hạng</h1>
+    <p class="text-gray-600 mb-4 text-sm">Điểm: +1 cho mỗi dự đoán đúng (HOME / HÒA / AWAY). Chỉ tính trận đã kết thúc.</p>
+    <div id="error-banner" class="error-banner hidden"></div>
+    <div id="leaderboard-container"></div>
+  </main>
+
+  <div id="loading" class="loading-overlay hidden">
+    <div class="spinner"></div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/footballApi.js"></script>
+  <script src="../js/leaderboard.js"></script>
+</body>
+</html>
