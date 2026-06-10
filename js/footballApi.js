@@ -75,6 +75,43 @@ async function getMatch(matchId) {
   return data.match;
 }
 
+const MATCH_INFO_CACHE = {};
+
+async function getMatchDetail(matchId) {
+  const key = 'detail_' + matchId;
+  if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];
+
+  const session = getFootballSession();
+  const data = await getFootballMatchDetail(session.username, session.passwordHash, matchId);
+  MATCH_INFO_CACHE[key] = data.match;
+  return data.match;
+}
+
+async function getMatchHead2Head(matchId, limit) {
+  const key = 'h2h_' + matchId + '_' + (limit || 5);
+  if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];
+
+  const session = getFootballSession();
+  const data = await getFootballMatchHead2Head(
+    session.username,
+    session.passwordHash,
+    matchId,
+    limit
+  );
+  MATCH_INFO_CACHE[key] = data.head2head;
+  return data.head2head;
+}
+
+async function getMatchInsightsData(matchId) {
+  const key = 'insights_' + matchId;
+  if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];
+
+  const session = getFootballSession();
+  const data = await getMatchInsights(session.username, session.passwordHash, matchId);
+  MATCH_INFO_CACHE[key] = data.insights;
+  return data.insights;
+}
+
 async function getFinishedMatches() {
   const matches = await getMatches();
   return matches.filter((m) => m.status === 'FINISHED');

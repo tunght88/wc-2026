@@ -83,6 +83,7 @@
         '<div class="match-header">' +
           '<span>' + escapeHtml(formatMatchDate(match.utcDate)) + ' · ' + escapeHtml(formatMatchTime(match.utcDate)) + '</span>' +
           '<span class="match-header-badges">' +
+            '<button type="button" class="btn-match-info" data-match-id="' + escapeHtml(String(match.id)) + '" title="Thông tin trận đấu" aria-label="Thông tin trận đấu">i</button>' +
             statusBadge +
             '<span class="badge badge-stage">' + escapeHtml(stageLabel) + '</span>' +
           '</span>' +
@@ -144,6 +145,18 @@
 
     matchesContainer.querySelectorAll('.btn-save-prediction').forEach(function (btn) {
       btn.addEventListener('click', handleSave);
+    });
+
+    matchesContainer.querySelectorAll('.btn-match-info').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const matchId = btn.dataset.matchId;
+        const match = allMatches.find(function (m) {
+          return String(m.id) === matchId;
+        });
+        if (match && typeof openMatchInfoModal === 'function') {
+          openMatchInfoModal(match);
+        }
+      });
     });
   }
 

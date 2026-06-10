@@ -94,3 +94,28 @@ async function getFootballMatch(username, passwordHash, matchId) {
     matchId,
   });
 }
+
+async function getFootballMatchDetail(username, passwordHash, matchId) {
+  return postAction('getFootballMatchDetail', {
+    username,
+    passwordHash,
+    matchId,
+  });
+}
+
+async function getFootballMatchHead2Head(username, passwordHash, matchId, limit) {
+  return postAction('getFootballMatchHead2Head', {
+    username,
+    passwordHash,
+    matchId,
+    limit: limit || 5,
+  });
+}
+
+async function getMatchInsights(username, passwordHash, matchId) {
+  return postAction('getMatchInsights', {
+    username,
+    passwordHash,
+    matchId,
+  });
+}

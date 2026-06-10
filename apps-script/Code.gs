@@ -1,6 +1,7 @@
 const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE';
 const USERS_SHEET = 'Users';
 const PREDICTIONS_SHEET = 'Predictions';
+const MATCH_INSIGHTS_SHEET = 'MatchInsights';
 
 function doGet(e) {
   return handleRequest(e);
@@ -44,6 +45,12 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleGetFootballMatches(payload)));
       case 'getFootballMatch':
         return corsResponse(JSON.stringify(handleGetFootballMatch(payload)));
+      case 'getFootballMatchDetail':
+        return corsResponse(JSON.stringify(handleGetFootballMatchDetail(payload)));
+      case 'getFootballMatchHead2Head':
+        return corsResponse(JSON.stringify(handleGetFootballMatchHead2Head(payload)));
+      case 'getMatchInsights':
+        return corsResponse(JSON.stringify(handleGetMatchInsights(payload)));
       default:
         return corsResponse(JSON.stringify({ success: false, message: 'Action không hợp lệ' }));
     }
@@ -66,6 +73,10 @@ function getUsersSheet() {
 
 function getPredictionsSheet() {
   return getSpreadsheet().getSheetByName(PREDICTIONS_SHEET);
+}
+
+function getMatchInsightsSheet() {
+  return getSpreadsheet().getSheetByName(MATCH_INSIGHTS_SHEET);
 }
 
 function getFootballApiKey() {
@@ -164,23 +175,30 @@ function handleRegister(payload) {
   };
 }
 
-function footballApiGet(path) {
+function footballApiGet(path, extraHeaders) {
   var apiKey = getFootballApiKey();
   if (!apiKey) {
     throw new Error('Chưa cấu hình FOOTBALL_API_KEY trong Script Properties');
   }
 
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'fd_' + path;
+  var cacheKey = 'fd_' + path + (extraHeaders ? '_' + JSON.stringify(extraHeaders) : '');
   var cached = cache.get(cacheKey);
   if (cached) {
     return JSON.parse(cached);
   }
 
+  var headers = { 'X-Auth-Token': apiKey };
+  if (extraHeaders) {
+    Object.keys(extraHeaders).forEach(function (key) {
+      headers[key] = extraHeaders[key];
+    });
+  }
+
   var url = 'https://api.football-data.org/v4' + path;
   var response = UrlFetchApp.fetch(url, {
     method: 'get',
-    headers: { 'X-Auth-Token': apiKey },
+    headers: headers,
     muteHttpExceptions: true,
   });
 
@@ -240,6 +258,86 @@ function handleGetFootballMatch(payload) {
   } catch (err) {
     return { success: false, message: err.message };
   }
+}
+
+function handleGetFootballMatchDetail(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var matchId = String(payload.matchId || '');
+  if (!matchId) {
+    return { success: false, message: 'Thiếu matchId' };
+  }
+
+  try {
+    var match = footballApiGet('/matches/' + encodeURIComponent(matchId), {
+      'X-Unfold-Lineups': 'true',
+    });
+    return { success: true, match: match };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+function handleGetFootballMatchHead2Head(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var matchId = String(payload.matchId || '');
+  if (!matchId) {
+    return { success: false, message: 'Thiếu matchId' };
+  }
+
+  var limit = parseInt(payload.limit, 10);
+  if (!limit || limit < 1) limit = 5;
+  if (limit > 10) limit = 10;
+
+  try {
+    var data = footballApiGet(
+      '/matches/' + encodeURIComponent(matchId) + '/head2head?limit=' + limit
+    );
+    return { success: true, head2head: data };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+function handleGetMatchInsights(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var matchId = String(payload.matchId || '');
+  if (!matchId) {
+    return { success: false, message: 'Thiếu matchId' };
+  }
+
+  var sheet = getMatchInsightsSheet();
+  if (!sheet) {
+    return { success: true, insights: null };
+  }
+
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === matchId) {
+      return {
+        success: true,
+        insights: {
+          expectedLineup: String(data[i][1] || ''),
+          expertAssessment: String(data[i][2] || ''),
+          pickSuggestion: String(data[i][3] || '').toUpperCase(),
+          pickNote: String(data[i][4] || ''),
+        },
+      };
+    }
+  }
+
+  return { success: true, insights: null };
 }
 
 function isMatchOpenForPrediction(match) {
