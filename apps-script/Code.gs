@@ -566,9 +566,49 @@ function sanitizeText(value, maxLen) {
 }
 
 var FOTMOB_WC_LEAGUE_ID = 77;
+var FOTMOB_SITE = 'https://www.fotmob.com';
+var FOTMOB_API_DATA = FOTMOB_SITE + '/api/data';
+var FOTMOB_API_LEGACY = FOTMOB_SITE + '/api';
 
-function fotmobFetch(path, params) {
+function fotmobRequestHeaders(acceptType) {
+  return {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: acceptType || '*/*',
+    Referer: FOTMOB_SITE + '/',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
+}
+
+function fotmobFetchJson(url, cachePrefix) {
   var cache = CacheService.getScriptCache();
+  var cacheKey = (cachePrefix || 'fmj_') + url;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: fotmobRequestHeaders('application/json, text/plain, */*'),
+    muteHttpExceptions: true,
+  });
+
+  var code = response.getResponseCode();
+  if (code !== 200) {
+    return null;
+  }
+
+  try {
+    var data = JSON.parse(response.getContentText());
+    cache.put(cacheKey, JSON.stringify(data), 300);
+    return data;
+  } catch (parseErr) {
+    return null;
+  }
+}
+
+function fotmobFetchData(path, params) {
   var query = '';
   if (params) {
     var parts = [];
@@ -577,53 +617,48 @@ function fotmobFetch(path, params) {
     });
     query = '?' + parts.join('&');
   }
+  return fotmobFetchJson(FOTMOB_API_DATA + path + query, 'fmd_');
+}
 
-  var cacheKey = 'fm_' + path + query;
-  var cached = cache.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
+function fotmobFetchLegacy(path, params) {
+  var query = '';
+  if (params) {
+    var parts = [];
+    Object.keys(params).forEach(function (key) {
+      parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+    });
+    query = '?' + parts.join('&');
   }
-
-  var url = 'https://www.fotmob.com/api' + path + query;
-  var response = UrlFetchApp.fetch(url, {
-    method: 'get',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: '*/*',
-      Referer: 'https://www.fotmob.com/',
-    },
-    muteHttpExceptions: true,
-  });
-
-  var code = response.getResponseCode();
-  var body = response.getContentText();
-  if (code !== 200) {
-    throw new Error('FotMob API lỗi HTTP ' + code);
-  }
-
-  var data = JSON.parse(body);
-  cache.put(cacheKey, JSON.stringify(data), 300);
-  return data;
+  return fotmobFetchJson(FOTMOB_API_LEGACY + path + query, 'fml_');
 }
 
 function fotmobFetchHtml(url) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'fmh_' + url;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   var response = UrlFetchApp.fetch(url, {
     method: 'get',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml',
-      Referer: 'https://www.fotmob.com/',
-    },
+    headers: fotmobRequestHeaders('text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'),
     muteHttpExceptions: true,
+    followRedirects: true,
   });
 
   if (response.getResponseCode() !== 200) {
     throw new Error('FotMob page lỗi HTTP ' + response.getResponseCode());
   }
 
-  return response.getContentText();
+  var html = response.getContentText();
+  cache.put(cacheKey, html, 300);
+  return html;
+}
+
+function fetchFotmobPageProps(pagePath) {
+  var url = pagePath.indexOf('http') === 0 ? pagePath : FOTMOB_SITE + pagePath;
+  return extractFotmobNextData(fotmobFetchHtml(url));
 }
 
 function extractFotmobNextData(html) {
@@ -646,6 +681,64 @@ function extractFotmobNextData(html) {
   }
 
   return pageProps;
+}
+
+function normalizeFotmobMatchDetails(pageProps) {
+  if (!pageProps) return null;
+  if (pageProps.general && pageProps.content) return pageProps;
+  if (pageProps.data && pageProps.data.general) return pageProps.data;
+  if (pageProps.match && pageProps.match.general) return pageProps.match;
+  if (pageProps.matchDetails && pageProps.matchDetails.general) return pageProps.matchDetails;
+  if (pageProps.initialState && pageProps.initialState.match && pageProps.initialState.match.general) {
+    return pageProps.initialState.match;
+  }
+  return null;
+}
+
+function collectFotmobMatchesFromNode(node, depth, matches) {
+  if (!node || depth > 10) return;
+  if (Array.isArray(node)) {
+    for (var i = 0; i < node.length; i++) {
+      var item = node[i];
+      if (item && item.id && item.home && item.away && item.home.name && item.away.name) {
+        matches.push(item);
+      }
+      collectFotmobMatchesFromNode(item, depth + 1, matches);
+    }
+    return;
+  }
+  if (typeof node !== 'object') return;
+
+  if (node.allMatches && Array.isArray(node.allMatches)) {
+    collectFotmobMatchesFromNode(node.allMatches, depth + 1, matches);
+  }
+  if (node.matches && Array.isArray(node.matches)) {
+    collectFotmobMatchesFromNode(node.matches, depth + 1, matches);
+  }
+  if (node.leagues && Array.isArray(node.leagues)) {
+    collectFotmobMatchesFromNode(node.leagues, depth + 1, matches);
+  }
+
+  Object.keys(node).forEach(function (key) {
+    if (key === 'home' || key === 'away' || key === 'status' || key === 'content') return;
+    collectFotmobMatchesFromNode(node[key], depth + 1, matches);
+  });
+}
+
+function collectFotmobMatches(pageProps) {
+  var matches = [];
+  collectFotmobMatchesFromNode(pageProps, 0, matches);
+
+  var unique = {};
+  var result = [];
+  matches.forEach(function (m) {
+    var id = String(m.id);
+    if (!unique[id]) {
+      unique[id] = true;
+      result.push(m);
+    }
+  });
+  return result;
 }
 
 function normalizeTeamKey(name) {
@@ -701,31 +794,23 @@ function findFotmobMatchInList(matches, homeName, awayName) {
   return null;
 }
 
-function findFotmobMatchOnDay(homeName, awayName, utcDateIso) {
-  var dateStr = formatFotmobDateStr(utcDateIso);
-  var data = fotmobFetch('/matches', { date: dateStr });
-  var leagues = data.leagues || [];
-
-  for (var i = 0; i < leagues.length; i++) {
-    var found = findFotmobMatchInList(leagues[i].matches || [], homeName, awayName);
-    if (found) return found;
-  }
-
-  return null;
-}
-
-function findFotmobMatchInWorldCup(homeName, awayName, utcDateIso) {
-  var data = fotmobFetch('/leagues', { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' });
-  var allMatches = (data.matches && data.matches.allMatches) || [];
+function findFotmobMatchInCollected(matches, homeName, awayName, utcDateIso) {
   var dayKey = formatFotmobDayKey(utcDateIso);
+  var exactDay = null;
+  var anyDay = null;
 
-  for (var i = 0; i < allMatches.length; i++) {
-    var m = allMatches[i];
+  for (var i = 0; i < matches.length; i++) {
+    var m = matches[i];
     var home = (m.home && m.home.name) || '';
     var away = (m.away && m.away.name) || '';
     if (!teamsLikelyMatch(home, homeName) || !teamsLikelyMatch(away, awayName)) {
       continue;
     }
+
+    var ref = {
+      id: String(m.id),
+      pageUrl: m.pageUrl || '',
+    };
 
     var matchDay = '';
     if (m.status && m.status.utcTime) {
@@ -734,15 +819,89 @@ function findFotmobMatchInWorldCup(homeName, awayName, utcDateIso) {
       matchDay = formatFotmobDayKey(m.time.utcTime);
     }
 
-    if (!matchDay || matchDay === dayKey) {
-      return {
-        id: String(m.id),
-        pageUrl: m.pageUrl || '',
-      };
+    if (matchDay && matchDay === dayKey) {
+      exactDay = ref;
+      break;
+    }
+    if (!anyDay) anyDay = ref;
+  }
+
+  return exactDay || anyDay;
+}
+
+function findFotmobMatchFromApi(homeName, awayName, utcDateIso) {
+  var dateStr = formatFotmobDateStr(utcDateIso);
+  var data = fotmobFetchData('/matches', { date: dateStr });
+  if (!data) {
+    data = fotmobFetchLegacy('/matches', { date: dateStr });
+  }
+  if (!data) return null;
+
+  var leagues = data.leagues || [];
+  for (var i = 0; i < leagues.length; i++) {
+    var found = findFotmobMatchInList(leagues[i].matches || [], homeName, awayName);
+    if (found) return found;
+  }
+
+  return findFotmobMatchInCollected(collectFotmobMatches(data), homeName, awayName, utcDateIso);
+}
+
+function findFotmobMatchFromWorldCupPage(homeName, awayName, utcDateIso) {
+  var pagePaths = [
+    '/leagues/' + FOTMOB_WC_LEAGUE_ID + '/overview/world-cup',
+    '/leagues/' + FOTMOB_WC_LEAGUE_ID + '/fixtures/world-cup',
+    '/leagues/' + FOTMOB_WC_LEAGUE_ID + '/table/world-cup',
+  ];
+
+  for (var p = 0; p < pagePaths.length; p++) {
+    try {
+      var pageProps = fetchFotmobPageProps(pagePaths[p]);
+      var found = findFotmobMatchInCollected(
+        collectFotmobMatches(pageProps),
+        homeName,
+        awayName,
+        utcDateIso
+      );
+      if (found) return found;
+    } catch (pageErr) {
+      // try next page variant
     }
   }
 
-  return findFotmobMatchInList(allMatches, homeName, awayName);
+  var data = fotmobFetchData('/leagues', { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' });
+  if (!data) {
+    data = fotmobFetchLegacy('/leagues', { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' });
+  }
+  if (!data) return null;
+
+  return findFotmobMatchInCollected(
+    collectFotmobMatches(data),
+    homeName,
+    awayName,
+    utcDateIso
+  );
+}
+
+function findFotmobMatchFromDayPage(homeName, awayName, utcDateIso) {
+  var dateStr = formatFotmobDateStr(utcDateIso);
+  var pagePaths = ['/?date=' + dateStr, '/matches?date=' + dateStr];
+
+  for (var p = 0; p < pagePaths.length; p++) {
+    try {
+      var pageProps = fetchFotmobPageProps(pagePaths[p]);
+      var found = findFotmobMatchInCollected(
+        collectFotmobMatches(pageProps),
+        homeName,
+        awayName,
+        utcDateIso
+      );
+      if (found) return found;
+    } catch (pageErr) {
+      // try next page variant
+    }
+  }
+
+  return findFotmobMatchFromApi(homeName, awayName, utcDateIso);
 }
 
 function resolveFotmobMatchRef(homeName, awayName, utcDateIso, overrideId) {
@@ -750,36 +909,72 @@ function resolveFotmobMatchRef(homeName, awayName, utcDateIso, overrideId) {
     return { id: String(overrideId), pageUrl: '' };
   }
 
-  var found = findFotmobMatchOnDay(homeName, awayName, utcDateIso);
+  var found = findFotmobMatchFromWorldCupPage(homeName, awayName, utcDateIso);
   if (found) return found;
 
-  return findFotmobMatchInWorldCup(homeName, awayName, utcDateIso);
+  return findFotmobMatchFromDayPage(homeName, awayName, utcDateIso);
+}
+
+function tryFotmobApiDetails(fotmobMatchId) {
+  var data =
+    fotmobFetchData('/matchDetails', { matchId: fotmobMatchId }) ||
+    fotmobFetchLegacy('/matchDetails', { matchId: fotmobMatchId });
+  return normalizeFotmobMatchDetails(data);
+}
+
+function tryFotmobPageDetails(pagePath) {
+  try {
+    var pageProps = fetchFotmobPageProps(pagePath);
+    return normalizeFotmobMatchDetails(pageProps);
+  } catch (pageErr) {
+    return null;
+  }
 }
 
 function fetchFotmobMatchDetails(fotmobMatchId, pageUrl) {
-  try {
-    return fotmobFetch('/matchDetails', { matchId: fotmobMatchId });
-  } catch (apiErr) {
-    if (!pageUrl) {
-      var fallbackUrl = 'https://www.fotmob.com/matches/team-vs-team/' + fotmobMatchId;
-      try {
-        var pageProps = extractFotmobNextData(fotmobFetchHtml(fallbackUrl));
-        if (pageProps.general || pageProps.content) {
-          return pageProps;
-        }
-      } catch (pageErr) {
-        throw apiErr;
-      }
-      throw apiErr;
-    }
+  var details = tryFotmobApiDetails(fotmobMatchId);
+  if (details) return details;
 
-    var fullUrl = pageUrl.indexOf('http') === 0 ? pageUrl : 'https://www.fotmob.com' + pageUrl;
-    var props = extractFotmobNextData(fotmobFetchHtml(fullUrl));
-    if (props.general || props.content) {
-      return props;
-    }
-    throw apiErr;
+  if (pageUrl) {
+    details = tryFotmobPageDetails(pageUrl);
+    if (details) return details;
   }
+
+  var pagePaths = [
+    '/match/' + fotmobMatchId,
+    '/matches/match/' + fotmobMatchId,
+    '/matches/a-vs-b/' + fotmobMatchId,
+  ];
+
+  for (var i = 0; i < pagePaths.length; i++) {
+    details = tryFotmobPageDetails(pagePaths[i]);
+    if (details) return details;
+  }
+
+  if (!pageUrl) {
+    var wcPaths = [
+      '/leagues/' + FOTMOB_WC_LEAGUE_ID + '/overview/world-cup',
+      '/leagues/' + FOTMOB_WC_LEAGUE_ID + '/fixtures/world-cup',
+    ];
+    for (var w = 0; w < wcPaths.length; w++) {
+      try {
+        var wcProps = fetchFotmobPageProps(wcPaths[w]);
+        var wcMatches = collectFotmobMatches(wcProps);
+        for (var m = 0; m < wcMatches.length; m++) {
+          if (String(wcMatches[m].id) === String(fotmobMatchId) && wcMatches[m].pageUrl) {
+            details = tryFotmobPageDetails(wcMatches[m].pageUrl);
+            if (details) return details;
+          }
+        }
+      } catch (wcErr) {
+        // continue
+      }
+    }
+  }
+
+  throw new Error(
+    'Không tải được dữ liệu FotMob. Thêm fotmob_match_id (cột F) vào sheet MatchInsights.'
+  );
 }
 
 function getPlayerDisplayName(player) {
