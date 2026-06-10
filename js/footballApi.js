@@ -156,3 +156,60 @@ function sortMatchesByDate(matches) {
     (a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime()
   );
 }
+
+function isMatchFinished(match) {
+  return match.status === 'FINISHED';
+}
+
+const TIME_FILTERS = {
+  'upcoming-1d': { label: 'Sắp diễn ra: 1 ngày' },
+  'upcoming-3d': { label: 'Sắp diễn ra: 3 ngày' },
+  'upcoming-1w': { label: 'Sắp diễn ra: 1 tuần' },
+  'upcoming-all': { label: 'Sắp diễn ra: Tất cả' },
+  finished: { label: 'Đã diễn ra' },
+};
+
+const PREDICTION_FILTERS = {
+  all: { label: 'Tất cả' },
+  predicted: { label: 'Đã dự đoán' },
+  'not-predicted': { label: 'Chưa dự đoán' },
+};
+
+function filterMatchesByTime(matches, timeKey) {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  if (timeKey === 'finished') {
+    return matches.filter(isMatchFinished);
+  }
+
+  return matches.filter(function (m) {
+    if (isMatchFinished(m)) return false;
+    const kickoff = new Date(m.utcDate).getTime();
+    if (timeKey === 'upcoming-1d') return kickoff <= now + dayMs;
+    if (timeKey === 'upcoming-3d') return kickoff <= now + 3 * dayMs;
+    if (timeKey === 'upcoming-1w') return kickoff <= now + 7 * dayMs;
+    return true;
+  });
+}
+
+function filterMatchesByPrediction(matches, userPredictions, predKey) {
+  if (predKey === 'predicted') {
+    return matches.filter(function (m) {
+      return !!userPredictions[String(m.id)];
+    });
+  }
+  if (predKey === 'not-predicted') {
+    return matches.filter(function (m) {
+      return !userPredictions[String(m.id)];
+    });
+  }
+  return matches;
+}
+
+function getPredictionResultStatus(match, prediction) {
+  if (!prediction) return 'none';
+  const actual = getActualResult(match);
+  if (!actual) return 'pending';
+  return prediction === actual ? 'correct' : 'wrong';
+}
