@@ -335,6 +335,11 @@ function handleGetMatchInsights(payload) {
           pickSuggestion: String(data[i][3] || '').toUpperCase(),
           pickNote: String(data[i][4] || ''),
           fotmobMatchId: String(data[i][5] || ''),
+          winProbHome: parseSheetPercent(data[i][6]),
+          winProbDraw: parseSheetPercent(data[i][7]),
+          winProbAway: parseSheetPercent(data[i][8]),
+          injuries: String(data[i][9] || ''),
+          marketValue: String(data[i][10] || ''),
         },
       };
     }
@@ -563,6 +568,13 @@ function sanitizeUsername(value) {
 function sanitizeText(value, maxLen) {
   if (!value) return '';
   return String(value).trim().substring(0, maxLen || 100);
+}
+
+function parseSheetPercent(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  var num = parseFloat(String(value).replace('%', '').trim());
+  if (isNaN(num)) return null;
+  return Math.round(num);
 }
 
 var FOTMOB_WC_LEAGUE_ID = 77;
@@ -1094,52 +1106,325 @@ function parseFotmobH2H(details) {
   };
 }
 
+function formatFotmobInsightText(insight) {
+  var text = String((insight && (insight.defaultText || insight.text)) || '').trim();
+  if (!text) return '';
+
+  var values = [];
+  (insight.statValues || []).forEach(function (sv) {
+    if (sv && sv.value !== undefined && sv.value !== null) {
+      values.push(String(sv.value));
+    } else if (sv && sv.name !== undefined) {
+      values.push(String(sv.name));
+    }
+  });
+
+  return text.replace(/\{(\d+)\}/g, function (_match, index) {
+    var idx = parseInt(index, 10);
+    return values[idx] !== undefined ? values[idx] : '';
+  });
+}
+
+function parseProbabilityTriple(home, draw, away, source) {
+  var h = Number(home);
+  var d = Number(draw);
+  var a = Number(away);
+  if (isNaN(h) || isNaN(d) || isNaN(a)) return null;
+
+  if (h <= 1 && d <= 1 && a <= 1 && h + d + a > 0.9 && h + d + a <= 1.1) {
+    h *= 100;
+    d *= 100;
+    a *= 100;
+  }
+
+  if (h < 0 || d < 0 || a < 0) return null;
+  if (h + d + a < 90 || h + d + a > 110) return null;
+
+  return {
+    home: Math.round(h),
+    draw: Math.round(d),
+    away: Math.round(a),
+    source: source || 'fotmob',
+  };
+}
+
+function parseFotmobProbabilitiesFromPoll(poll) {
+  if (!poll) return null;
+
+  if (poll.voteResult && poll.voteResult.Votes) {
+    var votes = poll.voteResult.Votes;
+    var total = 0;
+    var map = { home: 0, draw: 0, away: 0 };
+
+    votes.forEach(function (v) {
+      var count = 0;
+      if (v.Votes && v.Votes.length) count = Number(v.Votes[0]) || 0;
+      else if (v.votes && v.votes.length) count = Number(v.votes[0]) || 0;
+      total += count;
+
+      var name = String(v.Name || v.name || '').toLowerCase();
+      if (name === '1' || name === 'home' || name.indexOf('home') !== -1) map.home = count;
+      else if (name === 'x' || name === 'draw' || name.indexOf('draw') !== -1) map.draw = count;
+      else if (name === '2' || name === 'away' || name.indexOf('away') !== -1) map.away = count;
+    });
+
+    if (total > 0) {
+      return {
+        home: Math.round((map.home / total) * 100),
+        draw: Math.round((map.draw / total) * 100),
+        away: Math.round((map.away / total) * 100),
+        source: 'fotmob-votes',
+      };
+    }
+  }
+
+  if (poll.oddspoll && poll.oddspoll.Facts) {
+    for (var i = 0; i < poll.oddspoll.Facts.length; i++) {
+      var fact = poll.oddspoll.Facts[i];
+      if (!fact.StatValues || fact.StatValues.length < 3) continue;
+      var parsed = parseProbabilityTriple(
+        fact.StatValues[0],
+        fact.StatValues[1],
+        fact.StatValues[2],
+        'fotmob-odds'
+      );
+      if (parsed) return parsed;
+    }
+  }
+
+  return null;
+}
+
+function findProbabilityInObject(node, depth) {
+  if (!node || depth > 12) return null;
+
+  if (typeof node === 'object' && !Array.isArray(node)) {
+    if (
+      node.home !== undefined &&
+      node.draw !== undefined &&
+      node.away !== undefined &&
+      !node.matches
+    ) {
+      var direct = parseProbabilityTriple(node.home, node.draw, node.away, 'fotmob');
+      if (direct) return direct;
+    }
+
+    if (node.winProbability) {
+      var nested = findProbabilityInObject(node.winProbability, depth + 1);
+      if (nested) return nested;
+    }
+
+    var keys = Object.keys(node);
+    for (var k = 0; k < keys.length; k++) {
+      var found = findProbabilityInObject(node[keys[k]], depth + 1);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function parseFotmobProbabilities(details) {
+  var facts = details.content && details.content.matchFacts;
+  var fromPoll = parseFotmobProbabilitiesFromPoll(facts && facts.poll);
+  if (fromPoll) return fromPoll;
+
+  return findProbabilityInObject(details, 0);
+}
+
+function parseFotmobFormMatchItem(item) {
+  if (!item) return null;
+
+  var date = '';
+  if (item.date && item.date.utcTime) date = String(item.date.utcTime);
+  else if (item.UTCTime) date = String(item.UTCTime);
+
+  var homeName = (item.home && item.home.name) || '';
+  var awayName = (item.away && item.away.name) || '';
+  var score = item.score || '';
+  var result = item.resultString || '';
+  var venue = 'neutral';
+
+  if (item.home && item.home.isOurTeam) venue = 'home';
+  else if (item.away && item.away.isOurTeam) venue = 'away';
+
+  return {
+    date: date,
+    matchLabel: homeName + ' vs ' + awayName,
+    score: score,
+    result: result,
+    venue: venue,
+  };
+}
+
+function aggregateVenueRecord(matches) {
+  var stats = { home: { w: 0, d: 0, l: 0 }, away: { w: 0, d: 0, l: 0 } };
+  (matches || []).forEach(function (m) {
+    if (!m || !m.result) return;
+    var bucket = m.venue === 'home' ? stats.home : m.venue === 'away' ? stats.away : null;
+    if (!bucket) return;
+    if (m.result === 'W') bucket.w++;
+    else if (m.result === 'D') bucket.d++;
+    else if (m.result === 'L') bucket.l++;
+  });
+  return stats;
+}
+
 function parseFotmobForm(details) {
   var teamForm =
     details.content && details.content.matchFacts && details.content.matchFacts.teamForm;
   if (!teamForm || !teamForm.length) return null;
 
-  function mapFormRow(row) {
-    return (row || [])
-      .map(function (item) {
-        return item.resultString || '';
-      })
-      .filter(function (v) {
-        return !!v;
-      });
-  }
+  var homeMatches = (teamForm[0] || [])
+    .map(parseFotmobFormMatchItem)
+    .filter(function (m) {
+      return !!m;
+    });
+  var awayMatches = (teamForm[1] || [])
+    .map(parseFotmobFormMatchItem)
+    .filter(function (m) {
+      return !!m;
+    });
 
   return {
-    home: mapFormRow(teamForm[0]),
-    away: mapFormRow(teamForm[1]),
+    home: homeMatches.map(function (m) {
+      return m.result;
+    }),
+    away: awayMatches.map(function (m) {
+      return m.result;
+    }),
+    recentMatches: {
+      home: homeMatches,
+      away: awayMatches,
+    },
+    venueForm: {
+      home: aggregateVenueRecord(homeMatches),
+      away: aggregateVenueRecord(awayMatches),
+    },
   };
 }
 
-function parseFotmobProbabilities(details) {
-  var poll = details.content && details.content.matchFacts && details.content.matchFacts.poll;
-  if (!poll || !poll.voteResult || !poll.voteResult.Votes) return null;
+function parseFotmobFifaRanking(details) {
+  var teams = details.header && details.header.teams;
+  if (!teams || teams.length < 2) return null;
 
-  var votes = poll.voteResult.Votes;
-  var total = 0;
-  var map = { home: 0, draw: 0, away: 0 };
-
-  votes.forEach(function (v) {
-    var count = (v.Votes && v.Votes[0]) || 0;
-    total += count;
-    var name = String(v.Name || '').toLowerCase();
-    if (name === '1' || name === 'home') map.home = count;
-    else if (name === 'x' || name === 'draw') map.draw = count;
-    else if (name === '2' || name === 'away') map.away = count;
-  });
-
-  if (total <= 0) return null;
+  function toRank(value) {
+    if (value === null || value === undefined || value === '') return null;
+    var num = parseInt(String(value), 10);
+    return isNaN(num) ? null : num;
+  }
 
   return {
-    home: Math.round((map.home / total) * 100),
-    draw: Math.round((map.draw / total) * 100),
-    away: Math.round((map.away / total) * 100),
-    source: 'fotmob',
+    home: toRank(teams[0].fifaRank),
+    away: toRank(teams[1].fifaRank),
   };
+}
+
+function parseFotmobUnavailablePlayers(lineupSide) {
+  var players = [];
+  if (!lineupSide) return players;
+
+  var lists = [lineupSide.unavailable, lineupSide.missingPlayers, lineupSide.injuries];
+  lists.forEach(function (list) {
+    (list || []).forEach(function (p) {
+      var name = getPlayerDisplayName(p);
+      var reason = p.reason || p.status || p.type || 'Vắng mặt';
+      if (name) players.push(name + ' (' + reason + ')');
+    });
+  });
+
+  return players;
+}
+
+function parseFotmobInjuries(details) {
+  var lineup = details.content && details.content.lineup;
+  var result = { home: [], away: [] };
+  if (!lineup) return result;
+
+  if (lineup.homeTeam) {
+    result.home = parseFotmobUnavailablePlayers(lineup.homeTeam);
+  }
+  if (lineup.awayTeam) {
+    result.away = parseFotmobUnavailablePlayers(lineup.awayTeam);
+  }
+
+  if (lineup.naPlayers) {
+    (lineup.naPlayers.home || []).forEach(function (p) {
+      var name = getPlayerDisplayName(p);
+      if (name) result.home.push(name + ' (không có sẵn)');
+    });
+    (lineup.naPlayers.away || []).forEach(function (p) {
+      var name = getPlayerDisplayName(p);
+      if (name) result.away.push(name + ' (không có sẵn)');
+    });
+  }
+
+  return result;
+}
+
+function parseGoalsAverageFromTeamData(teamData) {
+  if (!teamData) return null;
+
+  var stats =
+    teamData.stats ||
+    teamData.overview ||
+    teamData.detail ||
+    (teamData.team && teamData.team.stats) ||
+    null;
+  if (!stats) return null;
+
+  var scored = stats.goalsScored || stats.goals || stats.goalsFor;
+  var conceded = stats.goalsConceded || stats.goalsAgainst;
+  var played = stats.matchesPlayed || stats.played || stats.matches;
+
+  if (scored === undefined || conceded === undefined || !played) return null;
+  played = Number(played);
+  if (!played) return null;
+
+  return {
+    scored: (Number(scored) / played).toFixed(1),
+    conceded: (Number(conceded) / played).toFixed(1),
+  };
+}
+
+function tryFotmobTeamData(teamId) {
+  if (!teamId) return null;
+  return fotmobFetchData('/teams', { id: teamId }) || fotmobFetchLegacy('/teams', { id: teamId });
+}
+
+function parseFotmobGoalsStats(details) {
+  var result = { home: null, away: null };
+  var general = details.general || {};
+  var homeId = general.homeTeam && general.homeTeam.id;
+  var awayId = general.awayTeam && general.awayTeam.id;
+
+  if (homeId) {
+    result.home = parseGoalsAverageFromTeamData(tryFotmobTeamData(homeId));
+  }
+  if (awayId) {
+    result.away = parseGoalsAverageFromTeamData(tryFotmobTeamData(awayId));
+  }
+
+  return result;
+}
+
+function parseFotmobMarketValue(details) {
+  var result = { home: null, away: null };
+  var general = details.general || {};
+  var homeId = general.homeTeam && general.homeTeam.id;
+  var awayId = general.awayTeam && general.awayTeam.id;
+
+  function extractValue(teamData) {
+    if (!teamData) return null;
+    if (teamData.marketValue) return String(teamData.marketValue);
+    if (teamData.team && teamData.team.marketValue) return String(teamData.team.marketValue);
+    if (teamData.details && teamData.details.marketValue) return String(teamData.details.marketValue);
+    return null;
+  }
+
+  result.home = extractValue(tryFotmobTeamData(homeId));
+  result.away = extractValue(tryFotmobTeamData(awayId));
+  return result;
 }
 
 function parseFotmobExpertText(details) {
@@ -1148,8 +1433,8 @@ function parseFotmobExpertText(details) {
   if (!facts) return '';
 
   (facts.insights || []).forEach(function (ins) {
-    var text = ins.defaultText || ins.text;
-    if (text) parts.push(String(text));
+    var text = formatFotmobInsightText(ins);
+    if (text && text.indexOf('{') === -1) parts.push(text);
   });
 
   (facts.QAData || []).forEach(function (qa) {
@@ -1167,27 +1452,43 @@ function derivePickFromProbabilities(probs) {
 }
 
 function buildFotmobMatchInfo(details, fotmobMatchId) {
-  var probabilities = parseFotmobProbabilities(details);
-  var pickSuggestion = derivePickFromProbabilities(probabilities);
+  var winProbability = parseFotmobProbabilities(details);
+  var pickSuggestion = derivePickFromProbabilities(winProbability);
   var pickNote = '';
 
-  if (probabilities) {
+  if (winProbability) {
     pickNote =
-      'Xác suất FotMob: Nhà ' +
-      probabilities.home +
+      'Xác suất ' +
+      winProbability.source +
+      ': Nhà ' +
+      winProbability.home +
       '% · Hòa ' +
-      probabilities.draw +
+      winProbability.draw +
       '% · Khách ' +
-      probabilities.away +
+      winProbability.away +
       '%';
   }
 
+  var form = parseFotmobForm(details);
+  var lineup = parseFotmobLineup(details);
+
   return {
     fotmobMatchId: String(fotmobMatchId),
-    lineup: parseFotmobLineup(details),
+    lineup: lineup,
+    formations: {
+      home: lineup && lineup.home ? lineup.home.formation : '',
+      away: lineup && lineup.away ? lineup.away.formation : '',
+    },
+    form: form,
+    recentMatches: form ? form.recentMatches : { home: [], away: [] },
+    venueForm: form ? form.venueForm : null,
     h2h: parseFotmobH2H(details),
-    form: parseFotmobForm(details),
-    probabilities: probabilities,
+    winProbability: winProbability,
+    probabilities: winProbability,
+    fifaRanking: parseFotmobFifaRanking(details),
+    injuries: parseFotmobInjuries(details),
+    marketValue: parseFotmobMarketValue(details),
+    goalsStats: parseFotmobGoalsStats(details),
     expertAssessment: parseFotmobExpertText(details),
     pickSuggestion: pickSuggestion,
     pickNote: pickNote,

@@ -1020,6 +1020,81 @@ body.modal-open {
   color: #9ca3af;
 }
 
+.prob-table-wrap {
+  margin-bottom: 0.75rem;
+}
+
+.prob-table td:last-child {
+  text-align: right;
+  width: 80px;
+}
+
+.compact-table {
+  font-size: 0.8rem;
+}
+
+.match-info-hint {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin: 0.5rem 0 0;
+  font-style: italic;
+}
+
+.recent-matches-group {
+  margin-top: 0.75rem;
+}
+
+.recent-matches-team {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--wc-green);
+  margin: 0.75rem 0 0.375rem;
+}
+
+.recent-matches-team:first-child {
+  margin-top: 0;
+}
+
+.recent-form-table {
+  font-size: 0.75rem;
+}
+
+.venue-form-block {
+  margin-bottom: 0.75rem;
+}
+
+.venue-form-block:last-child {
+  margin-bottom: 0;
+}
+
+.venue-form-title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--wc-green);
+  margin-bottom: 0.375rem;
+}
+
+.venue-form-table {
+  font-size: 0.75rem;
+}
+
+.injury-block {
+  margin-bottom: 0.75rem;
+}
+
+.injury-team {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--wc-green);
+  margin-bottom: 0.375rem;
+}
+
+.match-info-supplement {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--wc-border);
+}
+
 .match-info-loading {
   display: flex;
   flex-direction: column;
