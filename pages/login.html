@@ -25,6 +25,7 @@
           <label class="form-label" for="password">Mật khẩu</label>
           <input type="password" id="password" class="form-input" required autocomplete="current-password">
         </div>
+        <div id="login-success" class="success-banner hidden"></div>
         <div id="login-error" class="error-banner hidden"></div>
         <button type="submit" class="btn btn-primary w-full" id="login-btn">Đăng nhập</button>
       </form>
@@ -47,8 +48,14 @@
       }
 
       const form = document.getElementById('login-form');
+      const successEl = document.getElementById('login-success');
       const errorEl = document.getElementById('login-error');
       const loginBtn = document.getElementById('login-btn');
+
+      if (new URLSearchParams(window.location.search).get('registered') === '1') {
+        successEl.textContent = 'Đăng ký thành công. Vui lòng chờ admin kích hoạt tài khoản trước khi đăng nhập.';
+        successEl.classList.remove('hidden');
+      }
 
       form.addEventListener('submit', async function (e) {
         e.preventDefault();

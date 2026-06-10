@@ -153,11 +153,11 @@ function handleRegister(payload) {
     return { success: false, message: 'Username đã tồn tại' };
   }
 
-  getUsersSheet().appendRow([username, passwordHash, fullName, 'USER', 'TRUE']);
+  getUsersSheet().appendRow([username, passwordHash, fullName, 'USER', 'FALSE']);
 
   return {
     success: true,
-    message: 'Đăng ký thành công',
+    message: 'Đăng ký thành công. Vui lòng chờ admin kích hoạt tài khoản.',
     username: username,
     fullName: fullName,
     role: 'USER',

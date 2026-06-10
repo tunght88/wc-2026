@@ -91,13 +91,7 @@
         try {
           const passwordHash = await hashPassword(password);
           const result = await register(username, passwordHash, fullName);
-          saveSession({
-            username: result.username,
-            passwordHash: passwordHash,
-            fullName: result.fullName,
-            role: result.role,
-          });
-          window.location.href = 'fixtures.html';
+          window.location.href = 'login.html?registered=1';
         } catch (err) {
           errorEl.textContent = err.message || 'Đăng ký thất bại';
           errorEl.classList.remove('hidden');
