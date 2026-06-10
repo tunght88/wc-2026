@@ -112,6 +112,22 @@ async function getMatchInsightsData(matchId) {
   return data.insights;
 }
 
+async function loadFotMobMatchInfo(match) {
+  const key = 'fotmob_' + match.id;
+  if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];
+
+  const session = getFootballSession();
+  const payload = Object.assign({}, match);
+  const insights = await getMatchInsightsData(match.id);
+  if (insights && insights.fotmobMatchId) {
+    payload.fotmobMatchId = insights.fotmobMatchId;
+  }
+
+  const data = await getFotMobMatchInfo(session.username, session.passwordHash, payload);
+  MATCH_INFO_CACHE[key] = data.fotmob;
+  return data.fotmob;
+}
+
 async function getFinishedMatches() {
   const matches = await getMatches();
   return matches.filter((m) => m.status === 'FINISHED');

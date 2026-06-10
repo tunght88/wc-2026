@@ -51,6 +51,8 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleGetFootballMatchHead2Head(payload)));
       case 'getMatchInsights':
         return corsResponse(JSON.stringify(handleGetMatchInsights(payload)));
+      case 'getFotMobMatchInfo':
+        return corsResponse(JSON.stringify(handleGetFotMobMatchInfo(payload)));
       default:
         return corsResponse(JSON.stringify({ success: false, message: 'Action không hợp lệ' }));
     }
@@ -332,6 +334,7 @@ function handleGetMatchInsights(payload) {
           expertAssessment: String(data[i][2] || ''),
           pickSuggestion: String(data[i][3] || '').toUpperCase(),
           pickNote: String(data[i][4] || ''),
+          fotmobMatchId: String(data[i][5] || ''),
         },
       };
     }
@@ -560,4 +563,470 @@ function sanitizeUsername(value) {
 function sanitizeText(value, maxLen) {
   if (!value) return '';
   return String(value).trim().substring(0, maxLen || 100);
+}
+
+var FOTMOB_WC_LEAGUE_ID = 77;
+
+function fotmobFetch(path, params) {
+  var cache = CacheService.getScriptCache();
+  var query = '';
+  if (params) {
+    var parts = [];
+    Object.keys(params).forEach(function (key) {
+      parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+    });
+    query = '?' + parts.join('&');
+  }
+
+  var cacheKey = 'fm_' + path + query;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  var url = 'https://www.fotmob.com/api' + path + query;
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: '*/*',
+      Referer: 'https://www.fotmob.com/',
+    },
+    muteHttpExceptions: true,
+  });
+
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code !== 200) {
+    throw new Error('FotMob API lỗi HTTP ' + code);
+  }
+
+  var data = JSON.parse(body);
+  cache.put(cacheKey, JSON.stringify(data), 300);
+  return data;
+}
+
+function fotmobFetchHtml(url) {
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml',
+      Referer: 'https://www.fotmob.com/',
+    },
+    muteHttpExceptions: true,
+  });
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error('FotMob page lỗi HTTP ' + response.getResponseCode());
+  }
+
+  return response.getContentText();
+}
+
+function extractFotmobNextData(html) {
+  var marker = 'id="__NEXT_DATA__"';
+  var markerIdx = html.indexOf(marker);
+  if (markerIdx === -1) {
+    throw new Error('Không tìm thấy dữ liệu FotMob trên trang');
+  }
+
+  var start = html.indexOf('>', markerIdx) + 1;
+  var end = html.indexOf('</script>', start);
+  if (start <= 0 || end === -1) {
+    throw new Error('Không parse được dữ liệu FotMob');
+  }
+
+  var wrapper = JSON.parse(html.substring(start, end));
+  var pageProps = wrapper.props && wrapper.props.pageProps;
+  if (!pageProps) {
+    throw new Error('FotMob pageProps trống');
+  }
+
+  return pageProps;
+}
+
+function normalizeTeamKey(name) {
+  return String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function teamsLikelyMatch(a, b) {
+  var na = normalizeTeamKey(a);
+  var nb = normalizeTeamKey(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.indexOf(nb) !== -1 || nb.indexOf(na) !== -1) return true;
+  return false;
+}
+
+function formatFotmobDateStr(utcDateIso) {
+  return Utilities.formatDate(new Date(utcDateIso), 'GMT', 'yyyyMMdd');
+}
+
+function formatFotmobDayKey(utcDateIso) {
+  return Utilities.formatDate(new Date(utcDateIso), 'GMT', 'yyyy-MM-dd');
+}
+
+function getFotmobMatchIdFromSheet(matchId) {
+  var sheet = getMatchInsightsSheet();
+  if (!sheet) return '';
+
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(matchId)) {
+      return String(data[i][5] || '');
+    }
+  }
+  return '';
+}
+
+function findFotmobMatchInList(matches, homeName, awayName) {
+  for (var i = 0; i < matches.length; i++) {
+    var m = matches[i];
+    var home = (m.home && m.home.name) || '';
+    var away = (m.away && m.away.name) || '';
+    if (teamsLikelyMatch(home, homeName) && teamsLikelyMatch(away, awayName)) {
+      return {
+        id: String(m.id),
+        pageUrl: m.pageUrl || '',
+      };
+    }
+  }
+  return null;
+}
+
+function findFotmobMatchOnDay(homeName, awayName, utcDateIso) {
+  var dateStr = formatFotmobDateStr(utcDateIso);
+  var data = fotmobFetch('/matches', { date: dateStr });
+  var leagues = data.leagues || [];
+
+  for (var i = 0; i < leagues.length; i++) {
+    var found = findFotmobMatchInList(leagues[i].matches || [], homeName, awayName);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function findFotmobMatchInWorldCup(homeName, awayName, utcDateIso) {
+  var data = fotmobFetch('/leagues', { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' });
+  var allMatches = (data.matches && data.matches.allMatches) || [];
+  var dayKey = formatFotmobDayKey(utcDateIso);
+
+  for (var i = 0; i < allMatches.length; i++) {
+    var m = allMatches[i];
+    var home = (m.home && m.home.name) || '';
+    var away = (m.away && m.away.name) || '';
+    if (!teamsLikelyMatch(home, homeName) || !teamsLikelyMatch(away, awayName)) {
+      continue;
+    }
+
+    var matchDay = '';
+    if (m.status && m.status.utcTime) {
+      matchDay = formatFotmobDayKey(m.status.utcTime);
+    } else if (m.time && m.time.utcTime) {
+      matchDay = formatFotmobDayKey(m.time.utcTime);
+    }
+
+    if (!matchDay || matchDay === dayKey) {
+      return {
+        id: String(m.id),
+        pageUrl: m.pageUrl || '',
+      };
+    }
+  }
+
+  return findFotmobMatchInList(allMatches, homeName, awayName);
+}
+
+function resolveFotmobMatchRef(homeName, awayName, utcDateIso, overrideId) {
+  if (overrideId) {
+    return { id: String(overrideId), pageUrl: '' };
+  }
+
+  var found = findFotmobMatchOnDay(homeName, awayName, utcDateIso);
+  if (found) return found;
+
+  return findFotmobMatchInWorldCup(homeName, awayName, utcDateIso);
+}
+
+function fetchFotmobMatchDetails(fotmobMatchId, pageUrl) {
+  try {
+    return fotmobFetch('/matchDetails', { matchId: fotmobMatchId });
+  } catch (apiErr) {
+    if (!pageUrl) {
+      var fallbackUrl = 'https://www.fotmob.com/matches/team-vs-team/' + fotmobMatchId;
+      try {
+        var pageProps = extractFotmobNextData(fotmobFetchHtml(fallbackUrl));
+        if (pageProps.general || pageProps.content) {
+          return pageProps;
+        }
+      } catch (pageErr) {
+        throw apiErr;
+      }
+      throw apiErr;
+    }
+
+    var fullUrl = pageUrl.indexOf('http') === 0 ? pageUrl : 'https://www.fotmob.com' + pageUrl;
+    var props = extractFotmobNextData(fotmobFetchHtml(fullUrl));
+    if (props.general || props.content) {
+      return props;
+    }
+    throw apiErr;
+  }
+}
+
+function getPlayerDisplayName(player) {
+  if (!player) return '';
+  if (typeof player.name === 'string') return player.name;
+  if (player.name && player.name.full) return player.name.full;
+  if (player.name && player.name.first && player.name.last) {
+    return player.name.first + ' ' + player.name.last;
+  }
+  return player.name || '';
+}
+
+function parseFotmobTeamLineup(teamLineup, playersOut) {
+  if (!teamLineup) return null;
+
+  var players = playersOut || [];
+  var rows = teamLineup.players || [];
+  for (var r = 0; r < rows.length; r++) {
+    var row = rows[r] || [];
+    for (var p = 0; p < row.length; p++) {
+      players.push({
+        name: getPlayerDisplayName(row[p]),
+        shirt: String(row[p].shirt || row[p].shirtNumber || ''),
+      });
+    }
+  }
+
+  if (teamLineup.optaLineup && teamLineup.optaLineup.starting) {
+    players = teamLineup.optaLineup.starting.map(function (pl) {
+      return {
+        name: getPlayerDisplayName(pl),
+        shirt: String(pl.shirt || pl.shirtNumber || ''),
+      };
+    });
+  }
+
+  return {
+    name: teamLineup.teamName || teamLineup.name || '',
+    formation: teamLineup.formation || '',
+    players: players,
+  };
+}
+
+function parseFotmobLineup(details) {
+  var lineup = details.content && details.content.lineup;
+  if (!lineup) return null;
+
+  var result = { home: null, away: null };
+  var general = details.general || {};
+
+  if (lineup.homeTeam) {
+    result.home = {
+      name: lineup.homeTeam.name || (general.homeTeam && general.homeTeam.name) || '',
+      formation: lineup.homeTeam.formation || '',
+      players: (lineup.homeTeam.starters || []).map(function (p) {
+        return { name: p.name || '', shirt: String(p.shirtNumber || '') };
+      }),
+    };
+  }
+
+  if (lineup.awayTeam) {
+    result.away = {
+      name: lineup.awayTeam.name || (general.awayTeam && general.awayTeam.name) || '',
+      formation: lineup.awayTeam.formation || '',
+      players: (lineup.awayTeam.starters || []).map(function (p) {
+        return { name: p.name || '', shirt: String(p.shirtNumber || '') };
+      }),
+    };
+  }
+
+  if ((!result.home || !result.home.players.length) && lineup.lineup && lineup.lineup.length) {
+    for (var i = 0; i < lineup.lineup.length; i++) {
+      var teamLineup = lineup.lineup[i];
+      var parsed = parseFotmobTeamLineup(teamLineup, []);
+      if (!parsed) continue;
+
+      var homeId = general.homeTeam && general.homeTeam.id;
+      if (homeId && String(teamLineup.teamId) === String(homeId)) {
+        result.home = parsed;
+      } else {
+        result.away = parsed;
+      }
+    }
+  }
+
+  if (!result.home && !result.away) return null;
+  return result;
+}
+
+function parseFotmobH2H(details) {
+  var h2h = details.content && details.content.h2h;
+  if (!h2h) return null;
+
+  var summary = h2h.summary || [];
+  var matches = (h2h.matches || []).map(function (m) {
+    var date = '';
+    if (m.time && m.time.utcTime) {
+      date = String(m.time.utcTime);
+    } else if (m.status && m.status.utcTime) {
+      date = String(m.status.utcTime);
+    }
+
+    return {
+      date: date,
+      home: (m.home && m.home.name) || '',
+      away: (m.away && m.away.name) || '',
+      score: (m.status && m.status.scoreStr) || '',
+      league: (m.league && m.league.name) || '',
+    };
+  });
+
+  return {
+    homeWins: summary[0] || 0,
+    draws: summary[1] || 0,
+    awayWins: summary[2] || 0,
+    matches: matches,
+  };
+}
+
+function parseFotmobForm(details) {
+  var teamForm =
+    details.content && details.content.matchFacts && details.content.matchFacts.teamForm;
+  if (!teamForm || !teamForm.length) return null;
+
+  function mapFormRow(row) {
+    return (row || [])
+      .map(function (item) {
+        return item.resultString || '';
+      })
+      .filter(function (v) {
+        return !!v;
+      });
+  }
+
+  return {
+    home: mapFormRow(teamForm[0]),
+    away: mapFormRow(teamForm[1]),
+  };
+}
+
+function parseFotmobProbabilities(details) {
+  var poll = details.content && details.content.matchFacts && details.content.matchFacts.poll;
+  if (!poll || !poll.voteResult || !poll.voteResult.Votes) return null;
+
+  var votes = poll.voteResult.Votes;
+  var total = 0;
+  var map = { home: 0, draw: 0, away: 0 };
+
+  votes.forEach(function (v) {
+    var count = (v.Votes && v.Votes[0]) || 0;
+    total += count;
+    var name = String(v.Name || '').toLowerCase();
+    if (name === '1' || name === 'home') map.home = count;
+    else if (name === 'x' || name === 'draw') map.draw = count;
+    else if (name === '2' || name === 'away') map.away = count;
+  });
+
+  if (total <= 0) return null;
+
+  return {
+    home: Math.round((map.home / total) * 100),
+    draw: Math.round((map.draw / total) * 100),
+    away: Math.round((map.away / total) * 100),
+    source: 'fotmob',
+  };
+}
+
+function parseFotmobExpertText(details) {
+  var parts = [];
+  var facts = details.content && details.content.matchFacts;
+  if (!facts) return '';
+
+  (facts.insights || []).forEach(function (ins) {
+    var text = ins.defaultText || ins.text;
+    if (text) parts.push(String(text));
+  });
+
+  (facts.QAData || []).forEach(function (qa) {
+    if (qa.answer) parts.push(String(qa.answer));
+  });
+
+  return parts.join('\n\n');
+}
+
+function derivePickFromProbabilities(probs) {
+  if (!probs) return '';
+  if (probs.home >= probs.draw && probs.home >= probs.away) return 'HOME';
+  if (probs.away >= probs.draw && probs.away >= probs.home) return 'AWAY';
+  return 'DRAW';
+}
+
+function buildFotmobMatchInfo(details, fotmobMatchId) {
+  var probabilities = parseFotmobProbabilities(details);
+  var pickSuggestion = derivePickFromProbabilities(probabilities);
+  var pickNote = '';
+
+  if (probabilities) {
+    pickNote =
+      'Xác suất FotMob: Nhà ' +
+      probabilities.home +
+      '% · Hòa ' +
+      probabilities.draw +
+      '% · Khách ' +
+      probabilities.away +
+      '%';
+  }
+
+  return {
+    fotmobMatchId: String(fotmobMatchId),
+    lineup: parseFotmobLineup(details),
+    h2h: parseFotmobH2H(details),
+    form: parseFotmobForm(details),
+    probabilities: probabilities,
+    expertAssessment: parseFotmobExpertText(details),
+    pickSuggestion: pickSuggestion,
+    pickNote: pickNote,
+  };
+}
+
+function handleGetFotMobMatchInfo(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var matchId = String(payload.matchId || '');
+  var homeName = String(payload.homeTeamName || '');
+  var awayName = String(payload.awayTeamName || '');
+  var utcDate = String(payload.utcDate || '');
+
+  if (!homeName || !awayName || !utcDate) {
+    return { success: false, message: 'Thiếu thông tin trận đấu' };
+  }
+
+  try {
+    var overrideId = payload.fotmobMatchId || getFotmobMatchIdFromSheet(matchId);
+    var ref = resolveFotmobMatchRef(homeName, awayName, utcDate, overrideId);
+    if (!ref || !ref.id) {
+      return { success: false, message: 'Không tìm thấy trận trên FotMob' };
+    }
+
+    var details = fetchFotmobMatchDetails(ref.id, ref.pageUrl);
+    return {
+      success: true,
+      fotmob: buildFotmobMatchInfo(details, ref.id),
+    };
+  } catch (err) {
+    return { success: false, message: err.message || 'Không thể tải dữ liệu FotMob' };
+  }
 }

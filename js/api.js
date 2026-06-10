@@ -119,3 +119,15 @@ async function getMatchInsights(username, passwordHash, matchId) {
     matchId,
   });
 }
+
+async function getFotMobMatchInfo(username, passwordHash, match) {
+  return postAction('getFotMobMatchInfo', {
+    username,
+    passwordHash,
+    matchId: match.id,
+    homeTeamName: match.homeTeam.name,
+    awayTeamName: match.awayTeam.name,
+    utcDate: match.utcDate,
+    fotmobMatchId: match.fotmobMatchId || '',
+  });
+}
