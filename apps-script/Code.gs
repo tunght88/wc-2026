@@ -26,6 +26,8 @@ function handleRequest(e) {
     switch (action) {
       case 'login':
         return corsResponse(JSON.stringify(handleLogin(payload)));
+      case 'register':
+        return corsResponse(JSON.stringify(handleRegister(payload)));
       case 'savePrediction':
         return corsResponse(JSON.stringify(handleSavePrediction(payload)));
       case 'getPredictions':
@@ -135,6 +137,30 @@ function handleLogin(payload) {
     username: result.user.username,
     fullName: result.user.fullName,
     role: result.user.role,
+  };
+}
+
+function handleRegister(payload) {
+  var username = sanitizeUsername(payload.username);
+  var passwordHash = String(payload.passwordHash || '');
+  var fullName = sanitizeText(payload.fullName, 100);
+
+  if (!username || !passwordHash || !fullName) {
+    return { success: false, message: 'Thiếu thông tin đăng ký' };
+  }
+
+  if (getUserByUsername(username)) {
+    return { success: false, message: 'Username đã tồn tại' };
+  }
+
+  getUsersSheet().appendRow([username, passwordHash, fullName, 'USER', 'TRUE']);
+
+  return {
+    success: true,
+    message: 'Đăng ký thành công',
+    username: username,
+    fullName: fullName,
+    role: 'USER',
   };
 }
 

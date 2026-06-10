@@ -34,6 +34,10 @@ async function login(username, passwordHash) {
   return postAction('login', { username, passwordHash });
 }
 
+async function register(username, passwordHash, fullName) {
+  return postAction('register', { username, passwordHash, fullName });
+}
+
 async function savePrediction(username, passwordHash, matchId, prediction) {
   return postAction('savePrediction', { username, passwordHash, matchId, prediction });
 }
