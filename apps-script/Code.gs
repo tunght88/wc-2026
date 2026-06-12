@@ -812,6 +812,33 @@ function collectFotmobMatches(pageProps) {
   return result;
 }
 
+var TEAM_KEY_ALIASES = {
+  bosniah: 'bosniaherzegovina',
+  bosnia: 'bosniaherzegovina',
+  bosniaandherzegovina: 'bosniaherzegovina',
+  bosniaherzegovina: 'bosniaherzegovina',
+  usa: 'unitedstates',
+  us: 'unitedstates',
+  korearepublic: 'southkorea',
+  korearep: 'southkorea',
+  republicofireland: 'ireland',
+  caboverde: 'capeverde',
+  curacao: 'curacao',
+  cotedivoire: 'ivorycoast',
+  turkiye: 'turkey',
+};
+
+var TEAM_SLUG_ALIASES = {
+  'bosnia-h': 'bosnia-herzegovina',
+  bosnia: 'bosnia-herzegovina',
+  'bosnia-and-herzegovina': 'bosnia-herzegovina',
+  'korea-republic': 'south-korea',
+  'korea-rep': 'south-korea',
+  usa: 'united-states',
+  'cote-divoire': 'ivory-coast',
+  'cape-verde': 'cabo-verde',
+};
+
 function normalizeTeamKey(name) {
   return String(name || '')
     .toLowerCase()
@@ -820,13 +847,96 @@ function normalizeTeamKey(name) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+function getTeamMatchKeys(name) {
+  var raw = normalizeTeamKey(name);
+  if (!raw) return [];
+
+  var keys = [raw];
+  var stripped = raw.replace(/and/g, '').replace(/the/g, '').replace(/republic/g, '');
+  if (stripped && stripped !== raw) keys.push(stripped);
+
+  if (raw.length > 5 && /[a-z]h$/.test(raw)) {
+    keys.push(raw.slice(0, -1));
+  }
+
+  keys.forEach(function (key) {
+    if (TEAM_KEY_ALIASES[key]) keys.push(TEAM_KEY_ALIASES[key]);
+  });
+
+  var unique = {};
+  var result = [];
+  keys.forEach(function (key) {
+    if (!key || unique[key]) return;
+    unique[key] = true;
+    result.push(key);
+  });
+  return result;
+}
+
 function teamsLikelyMatch(a, b) {
-  var na = normalizeTeamKey(a);
-  var nb = normalizeTeamKey(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  if (na.indexOf(nb) !== -1 || nb.indexOf(na) !== -1) return true;
+  var keysA = getTeamMatchKeys(a);
+  var keysB = getTeamMatchKeys(b);
+  if (!keysA.length || !keysB.length) return false;
+
+  for (var i = 0; i < keysA.length; i++) {
+    for (var j = 0; j < keysB.length; j++) {
+      var na = keysA[i];
+      var nb = keysB[j];
+      if (!na || !nb) continue;
+      if (na === nb) return true;
+
+      var minLen = Math.min(na.length, nb.length);
+      if (minLen >= 4 && (na.indexOf(nb) !== -1 || nb.indexOf(na) !== -1)) {
+        return true;
+      }
+    }
+  }
   return false;
+}
+
+function uniqueTeamNames() {
+  var seen = {};
+  var result = [];
+  for (var i = 0; i < arguments.length; i++) {
+    var name = String(arguments[i] || '').trim();
+    if (!name) continue;
+    var key = name.toLowerCase();
+    if (seen[key]) continue;
+    seen[key] = true;
+    result.push(name);
+  }
+  return result;
+}
+
+function toFotmobTeamSlug(name) {
+  var slug = String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\./g, '')
+    .replace(/\band\b/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return TEAM_SLUG_ALIASES[slug] || slug;
+}
+
+function buildFotmobMatchSlug(homeName, awayName) {
+  var homeSlug = toFotmobTeamSlug(homeName);
+  var awaySlug = toFotmobTeamSlug(awayName);
+  if (!homeSlug || !awaySlug) return '';
+  return homeSlug + '-vs-' + awaySlug;
+}
+
+function extractFotmobMatchIdFromDetails(details) {
+  if (!details) return '';
+  if (details.general && details.general.matchId) {
+    return String(details.general.matchId);
+  }
+  if (details.header && details.header.matchId) {
+    return String(details.header.matchId);
+  }
+  return '';
 }
 
 function formatFotmobDateStr(utcDateIso) {
@@ -939,18 +1049,27 @@ function findFotmobMatchFromWorldCupPage(homeName, awayName, utcDateIso) {
     }
   }
 
-  var data = fotmobFetchData('/leagues', { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' });
-  if (!data) {
-    data = fotmobFetchLegacy('/leagues', { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' });
-  }
-  if (!data) return null;
+  var seasons = ['2025/2026', '2026', '2026/2027', ''];
+  for (var s = 0; s < seasons.length; s++) {
+    var params = { id: FOTMOB_WC_LEAGUE_ID, tab: 'fixtures' };
+    if (seasons[s]) params.season = seasons[s];
 
-  return findFotmobMatchInCollected(
-    collectFotmobMatches(data),
-    homeName,
-    awayName,
-    utcDateIso
-  );
+    var data = fotmobFetchData('/leagues', params);
+    if (!data) {
+      data = fotmobFetchLegacy('/leagues', params);
+    }
+    if (!data) continue;
+
+    var foundLeague = findFotmobMatchInCollected(
+      collectFotmobMatches(data),
+      homeName,
+      awayName,
+      utcDateIso
+    );
+    if (foundLeague) return foundLeague;
+  }
+
+  return null;
 }
 
 function findFotmobMatchFromDayPage(homeName, awayName, utcDateIso) {
@@ -975,15 +1094,91 @@ function findFotmobMatchFromDayPage(homeName, awayName, utcDateIso) {
   return findFotmobMatchFromApi(homeName, awayName, utcDateIso);
 }
 
-function resolveFotmobMatchRef(homeName, awayName, utcDateIso, overrideId) {
+function findFotmobMatchFromSlugPage(homeNames, awayNames) {
+  for (var h = 0; h < homeNames.length; h++) {
+    for (var a = 0; a < awayNames.length; a++) {
+      var slug = buildFotmobMatchSlug(homeNames[h], awayNames[a]);
+      if (!slug) continue;
+
+      var pagePaths = [
+        '/matches/' + slug,
+        '/matches/' + slug + '/match',
+      ];
+
+      for (var p = 0; p < pagePaths.length; p++) {
+        var details = tryFotmobPageDetails(pagePaths[p]);
+        var matchId = extractFotmobMatchIdFromDetails(details);
+        if (matchId) {
+          return { id: matchId, pageUrl: pagePaths[p] };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function findFotmobMatchFromSearch(homeNames, awayNames, utcDateIso) {
+  var terms = [];
+  homeNames.forEach(function (home) {
+    awayNames.forEach(function (away) {
+      terms.push(home + ' ' + away);
+      terms.push(away + ' ' + home);
+    });
+  });
+
+  for (var t = 0; t < terms.length; t++) {
+    var data =
+      fotmobFetchData('/searchapi', { term: terms[t] }) ||
+      fotmobFetchLegacy('/searchData', { term: terms[t] });
+    if (!data) continue;
+
+    var matches = collectFotmobMatches(data);
+    for (var h = 0; h < homeNames.length; h++) {
+      for (var a = 0; a < awayNames.length; a++) {
+        var found = findFotmobMatchInCollected(matches, homeNames[h], awayNames[a], utcDateIso);
+        if (found) return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveFotmobMatchWithNames(homeName, awayName, utcDateIso) {
+  var found = findFotmobMatchFromWorldCupPage(homeName, awayName, utcDateIso);
+  if (found) return found;
+
+  found = findFotmobMatchFromDayPage(homeName, awayName, utcDateIso);
+  if (found) return found;
+
+  return null;
+}
+
+function resolveFotmobMatchRef(homeName, awayName, utcDateIso, overrideId, homeShortName, awayShortName) {
   if (overrideId) {
     return { id: String(overrideId), pageUrl: '' };
   }
 
-  var found = findFotmobMatchFromWorldCupPage(homeName, awayName, utcDateIso);
+  var homeNames = uniqueTeamNames(homeName, homeShortName);
+  var awayNames = uniqueTeamNames(awayName, awayShortName);
+  if (!homeNames.length) homeNames = [homeName];
+  if (!awayNames.length) awayNames = [awayName];
+
+  var h;
+  var a;
+  var found;
+
+  for (h = 0; h < homeNames.length; h++) {
+    for (a = 0; a < awayNames.length; a++) {
+      found = resolveFotmobMatchWithNames(homeNames[h], awayNames[a], utcDateIso);
+      if (found) return found;
+    }
+  }
+
+  found = findFotmobMatchFromSlugPage(homeNames, awayNames);
   if (found) return found;
 
-  return findFotmobMatchFromDayPage(homeName, awayName, utcDateIso);
+  return findFotmobMatchFromSearch(homeNames, awayNames, utcDateIso);
 }
 
 function tryFotmobApiDetails(fotmobMatchId) {
@@ -1709,6 +1904,8 @@ function handleGetFotMobMatchInfo(payload) {
   var matchId = String(payload.matchId || '');
   var homeName = String(payload.homeTeamName || '');
   var awayName = String(payload.awayTeamName || '');
+  var homeShortName = String(payload.homeTeamShortName || '');
+  var awayShortName = String(payload.awayTeamShortName || '');
   var utcDate = String(payload.utcDate || '');
 
   if (!homeName || !awayName || !utcDate) {
@@ -1717,7 +1914,14 @@ function handleGetFotMobMatchInfo(payload) {
 
   try {
     var overrideId = payload.fotmobMatchId || getFotmobMatchIdFromSheet(matchId);
-    var ref = resolveFotmobMatchRef(homeName, awayName, utcDate, overrideId);
+    var ref = resolveFotmobMatchRef(
+      homeName,
+      awayName,
+      utcDate,
+      overrideId,
+      homeShortName,
+      awayShortName
+    );
     if (!ref || !ref.id) {
       return { success: false, message: 'Không tìm thấy trận trên FotMob' };
     }

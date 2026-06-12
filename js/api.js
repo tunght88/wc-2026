@@ -127,6 +127,8 @@ async function getFotMobMatchInfo(username, passwordHash, match) {
     matchId: match.id,
     homeTeamName: match.homeTeam.name,
     awayTeamName: match.awayTeam.name,
+    homeTeamShortName: match.homeTeam.shortName || '',
+    awayTeamShortName: match.awayTeam.shortName || '',
     utcDate: match.utcDate,
     fotmobMatchId: match.fotmobMatchId || '',
   });
