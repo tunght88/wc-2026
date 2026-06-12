@@ -889,6 +889,10 @@ body.modal-open {
   border: 1px solid var(--wc-border);
 }
 
+.lineup-player-avatar:not(.lineup-player-avatar-fallback) .lineup-player-shirt-fallback-only {
+  display: none;
+}
+
 .lineup-player-avatar-fallback {
   display: flex;
   align-items: center;

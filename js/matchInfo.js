@@ -73,8 +73,8 @@
       return (
         '<span class="lineup-player-avatar">' +
           '<img class="lineup-player-photo" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy"' +
-            ' onerror="this.style.display=\'none\'; this.parentElement.classList.add(\'lineup-player-avatar-fallback\');">' +
-          '<span class="lineup-player-shirt">' + shirt + '</span>' +
+            ' onerror="this.remove(); this.parentElement.classList.add(\'lineup-player-avatar-fallback\');">' +
+          '<span class="lineup-player-shirt lineup-player-shirt-fallback-only">' + shirt + '</span>' +
         '</span>'
       );
     }
@@ -92,7 +92,10 @@
       '<ul class="lineup-list">' +
       players
         .map(function (entry) {
-          const label = (entry.shirt ? entry.shirt + '. ' : '') + (entry.name || '');
+          const hasPhoto = !!getPlayerImageUrl(entry);
+          const label = hasPhoto
+            ? (entry.name || '')
+            : (entry.shirt ? entry.shirt + '. ' : '') + (entry.name || '');
           return (
             '<li class="lineup-player">' +
               renderLineupPlayerAvatar(entry) +
