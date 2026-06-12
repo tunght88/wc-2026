@@ -42,6 +42,28 @@
     return 'DRAW';
   }
 
+  function getProbabilitySourceLabel(source) {
+    if (source === 'sheet') return 'Sheet (thủ công)';
+    if (source === 'fotmob-odds' || source === 'football-data-odds') return 'Kèo châu Âu';
+    if (source === 'fotmob-votes') return 'Bình chọn FotMob';
+    return 'FotMob';
+  }
+
+  function formatProbabilityNote(probs) {
+    if (!probs) return '';
+    if (probs.odds) {
+      return (
+        'Kèo châu Âu: ' +
+        probs.odds.home + ' / ' + probs.odds.draw + ' / ' + probs.odds.away +
+        ' → ' + probs.home + '% / ' + probs.draw + '% / ' + probs.away + '%'
+      );
+    }
+    return (
+      'Dựa trên xác suất cao nhất: ' +
+      probs.home + '% / ' + probs.draw + '% / ' + probs.away + '%'
+    );
+  }
+
   function formatShortDate(dateStr) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
@@ -267,14 +289,12 @@
 
     const homeName = match.homeTeam.shortName || match.homeTeam.name;
     const awayName = match.awayTeam.shortName || match.awayTeam.name;
-    const sourceLabel =
-      probs.source === 'sheet'
-        ? 'Sheet (thủ công)'
-        : probs.source === 'fotmob-odds'
-          ? 'FotMob Odds'
-          : probs.source === 'fotmob-votes'
-            ? 'FotMob Votes'
-            : 'FotMob';
+    const sourceLabel = getProbabilitySourceLabel(probs.source);
+    const oddsNote = probs.odds
+      ? '<p class="prob-odds">Kèo 1X2: ' +
+        probs.odds.home + ' / ' + probs.odds.draw + ' / ' + probs.odds.away +
+        '</p>'
+      : '';
 
     return (
       '<div class="prob-table-wrap">' +
@@ -287,6 +307,7 @@
           '</tbody>' +
         '</table>' +
       '</div>' +
+      oddsNote +
       '<div class="prob-bars">' +
         '<div class="prob-row">' +
           '<span class="prob-label">' + escapeHtml(homeName) + '</span>' +
@@ -462,26 +483,77 @@
     );
   }
 
+  function buildPlayerPickPieGradient(stats) {
+    if (!stats || !stats.total) return '#e5e7eb';
+
+    const homeEnd = (stats.home / stats.total) * 100;
+    const drawEnd = homeEnd + (stats.draw / stats.total) * 100;
+
+    return (
+      'conic-gradient(#16a34a 0% ' + homeEnd + '%, ' +
+      '#4f46e5 ' + homeEnd + '% ' + drawEnd + '%, ' +
+      '#d97706 ' + drawEnd + '% 100%)'
+    );
+  }
+
+  function renderPlayerPickChart(stats, match) {
+    if (!stats || !stats.total) {
+      return '<p class="match-info-empty">Chưa có người chơi nào chọn trận này</p>';
+    }
+
+    const homeName = match.homeTeam.shortName || match.homeTeam.name;
+    const awayName = match.awayTeam.shortName || match.awayTeam.name;
+    const pieStyle = 'background:' + buildPlayerPickPieGradient(stats);
+
+    return (
+      '<div class="player-pick-chart">' +
+        '<div class="player-pick-pie-wrap">' +
+          '<div class="player-pick-pie" style="' + pieStyle + '"></div>' +
+          '<div class="player-pick-pie-center">' +
+            '<span class="player-pick-pie-total">' + stats.total + '</span>' +
+            '<span class="player-pick-pie-label">lượt chọn</span>' +
+          '</div>' +
+        '</div>' +
+        '<ul class="player-pick-legend">' +
+          '<li class="player-pick-legend-item">' +
+            '<span class="player-pick-dot player-pick-dot-home"></span>' +
+            '<span class="player-pick-legend-text">' + escapeHtml(homeName) + ' thắng</span>' +
+            '<span class="player-pick-legend-value">' + stats.home + ' (' + stats.homePct + '%)</span>' +
+          '</li>' +
+          '<li class="player-pick-legend-item">' +
+            '<span class="player-pick-dot player-pick-dot-draw"></span>' +
+            '<span class="player-pick-legend-text">Hòa</span>' +
+            '<span class="player-pick-legend-value">' + stats.draw + ' (' + stats.drawPct + '%)</span>' +
+          '</li>' +
+          '<li class="player-pick-legend-item">' +
+            '<span class="player-pick-dot player-pick-dot-away"></span>' +
+            '<span class="player-pick-legend-text">' + escapeHtml(awayName) + ' thắng</span>' +
+            '<span class="player-pick-legend-value">' + stats.away + ' (' + stats.awayPct + '%)</span>' +
+          '</li>' +
+        '</ul>' +
+      '</div>'
+    );
+  }
+
   function renderPickSection(fotmob, insights, match) {
     const probs = getWinProbability(fotmob, insights);
     const sheetPick = insights && insights.pickSuggestion;
-    const fotmobPick = derivePickFromProbability(probs);
+    const fotmobPick =
+      (fotmob && fotmob.pickSuggestion) || derivePickFromProbability(probs);
     const pick = sheetPick || fotmobPick;
 
     if (!pick) {
       return (
-        '<p class="match-info-empty">Chưa có gợi ý — cần xác suất thắng/hòa/thua.</p>' +
+        '<p class="match-info-empty">Chưa có gợi ý — cần kèo châu Âu hoặc xác suất thắng/hòa/thua.</p>' +
         '<p class="match-info-hint">Nhập xác suất vào cột G/H/I hoặc pick vào cột D sheet MatchInsights.</p>'
       );
     }
 
     const label = getPredictionLabel(pick, match);
-    let note = (insights && insights.pickNote) || '';
+    let note = (insights && insights.pickNote) || (fotmob && fotmob.pickNote) || '';
 
     if (!note && probs) {
-      note =
-        'Dựa trên xác suất cao nhất: ' +
-        probs.home + '% / ' + probs.draw + '% / ' + probs.away + '%';
+      note = formatProbabilityNote(probs);
     }
 
     let html =
@@ -495,14 +567,17 @@
     }
 
     if (!sheetPick && fotmobPick) {
-      html += '<p class="pick-note pick-note-muted">Gợi ý tự động từ xác suất</p>';
+      const autoLabel = probs && probs.odds
+        ? 'Gợi ý tự động từ kèo châu Âu'
+        : 'Gợi ý tự động từ xác suất';
+      html += '<p class="pick-note pick-note-muted">' + escapeHtml(autoLabel) + '</p>';
     }
 
     html += '</div>';
     return html;
   }
 
-  function renderMatchInfoContent(match, fotmob, insights) {
+  function renderMatchInfoContent(match, fotmob, insights, pickStats) {
     const expertText =
       (insights && insights.expertAssessment) ||
       (fotmob && fotmob.expertAssessment) ||
@@ -552,6 +627,10 @@
         renderFotmobH2H(fotmob, match) +
       '</section>' +
       '<section class="match-info-section">' +
+        '<h3 class="match-info-section-title">Tỷ lệ chọn của người chơi</h3>' +
+        renderPlayerPickChart(pickStats, match) +
+      '</section>' +
+      '<section class="match-info-section">' +
         '<h3 class="match-info-section-title">Gợi ý chọn</h3>' +
         renderPickSection(fotmob, insights, match) +
       '</section>'
@@ -572,10 +651,12 @@
       const results = await Promise.allSettled([
         loadFotMobMatchInfo(match),
         getMatchInsightsData(match.id),
+        getMatchPredictionStatsData(match.id),
       ]);
 
       const fotmob = results[0].status === 'fulfilled' ? results[0].value : null;
       const insights = results[1].status === 'fulfilled' ? results[1].value : null;
+      const pickStats = results[2].status === 'fulfilled' ? results[2].value : null;
       const fotmobError =
         results[0].status === 'rejected'
           ? (results[0].reason && results[0].reason.message) || 'Không tải được FotMob'
@@ -589,7 +670,7 @@
       if (fotmobError && !fotmob) {
         html += '<div class="match-info-fallback-banner">' + escapeHtml(fotmobError) + '</div>';
       }
-      html += renderMatchInfoContent(match, fotmob, insights);
+      html += renderMatchInfoContent(match, fotmob, insights, pickStats);
       bodyEl.innerHTML = html;
     } catch (err) {
       bodyEl.innerHTML =

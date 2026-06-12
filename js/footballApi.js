@@ -206,6 +206,16 @@ async function getMatchInsightsData(matchId) {
   return data.insights;
 }
 
+async function getMatchPredictionStatsData(matchId) {
+  const key = 'pickstats_' + matchId;
+  if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];
+
+  const session = getFootballSession();
+  const data = await getMatchPredictionStats(session.username, session.passwordHash, matchId);
+  MATCH_INFO_CACHE[key] = data.stats;
+  return data.stats;
+}
+
 async function loadFotMobMatchInfo(match) {
   const key = 'fotmob_' + match.id;
   if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];

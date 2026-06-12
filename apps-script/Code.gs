@@ -53,6 +53,8 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleGetMatchInsights(payload)));
       case 'getFotMobMatchInfo':
         return corsResponse(JSON.stringify(handleGetFotMobMatchInfo(payload)));
+      case 'getMatchPredictionStats':
+        return corsResponse(JSON.stringify(handleGetMatchPredictionStats(payload)));
       default:
         return corsResponse(JSON.stringify({ success: false, message: 'Action không hợp lệ' }));
     }
@@ -454,6 +456,62 @@ function handleGetPredictions(payload) {
   }
 
   return { success: true, predictions: predictions, activeUsers: activeUsers };
+}
+
+function getActivePlayerUsernames() {
+  var usersData = getUsersSheet().getDataRange().getValues();
+  var players = {};
+  for (var i = 1; i < usersData.length; i++) {
+    if (!usersData[i][0]) continue;
+    if (String(usersData[i][4]).toUpperCase() !== 'TRUE') continue;
+    if (String(usersData[i][3]).toUpperCase() === 'ADMIN') continue;
+    players[String(usersData[i][0])] = true;
+  }
+  return players;
+}
+
+function handleGetMatchPredictionStats(payload) {
+  var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var matchId = String(payload.matchId || '');
+  if (!matchId) {
+    return { success: false, message: 'Thiếu matchId' };
+  }
+
+  var players = getActivePlayerUsernames();
+  var sheet = getPredictionsSheet();
+  var data = sheet.getDataRange().getValues();
+  var counts = { home: 0, draw: 0, away: 0, total: 0 };
+
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0] || String(data[i][1]) !== matchId) continue;
+    if (!players[String(data[i][0])]) continue;
+
+    var prediction = String(data[i][2]).toUpperCase();
+    if (prediction === 'HOME') counts.home++;
+    else if (prediction === 'DRAW') counts.draw++;
+    else if (prediction === 'AWAY') counts.away++;
+    else continue;
+
+    counts.total++;
+  }
+
+  var total = counts.total;
+  return {
+    success: true,
+    stats: {
+      home: counts.home,
+      draw: counts.draw,
+      away: counts.away,
+      total: total,
+      homePct: total ? Math.round((counts.home / total) * 100) : 0,
+      drawPct: total ? Math.round((counts.draw / total) * 100) : 0,
+      awayPct: total ? Math.round((counts.away / total) * 100) : 0,
+    },
+  };
 }
 
 function handleGetUsers(payload) {
@@ -1175,8 +1233,148 @@ function parseProbabilityTriple(home, draw, away, source) {
   };
 }
 
+function parseEuropeanOddsTriple(home, draw, away, source) {
+  var h = Number(home);
+  var d = Number(draw);
+  var a = Number(away);
+  if (isNaN(h) || isNaN(d) || isNaN(a)) return null;
+  if (h < 1.01 || d < 1.01 || a < 1.01) return null;
+  if (h > 500 || d > 500 || a > 500) return null;
+  if (h + d + a >= 90 && h + d + a <= 110) return null;
+
+  var impliedHome = 1 / h;
+  var impliedDraw = 1 / d;
+  var impliedAway = 1 / a;
+  var total = impliedHome + impliedDraw + impliedAway;
+  if (!total) return null;
+
+  return {
+    home: Math.round((impliedHome / total) * 100),
+    draw: Math.round((impliedDraw / total) * 100),
+    away: Math.round((impliedAway / total) * 100),
+    source: source || 'fotmob-odds',
+    odds: {
+      home: Math.round(h * 100) / 100,
+      draw: Math.round(d * 100) / 100,
+      away: Math.round(a * 100) / 100,
+    },
+  };
+}
+
+function parseOddsTriple(home, draw, away, source) {
+  return (
+    parseEuropeanOddsTriple(home, draw, away, source) ||
+    parseProbabilityTriple(home, draw, away, source)
+  );
+}
+
+function findEuropeanOddsInObject(node, depth) {
+  if (!node || depth > 12) return null;
+
+  if (typeof node === 'object' && !Array.isArray(node)) {
+    if (
+      node.homeWin !== undefined &&
+      node.draw !== undefined &&
+      node.awayWin !== undefined &&
+      !node.matches
+    ) {
+      var fromWinKeys = parseEuropeanOddsTriple(
+        node.homeWin,
+        node.draw,
+        node.awayWin,
+        'fotmob-odds'
+      );
+      if (fromWinKeys) return fromWinKeys;
+    }
+
+    if (node.odds && typeof node.odds === 'object') {
+      var fromOdds = parseEuropeanOddsTriple(
+        node.odds.homeWin || node.odds.home,
+        node.odds.draw,
+        node.odds.awayWin || node.odds.away,
+        'fotmob-odds'
+      );
+      if (fromOdds) return fromOdds;
+    }
+
+    var keys = Object.keys(node);
+    for (var k = 0; k < keys.length; k++) {
+      var found = findEuropeanOddsInObject(node[keys[k]], depth + 1);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function parseFootballDataOdds(matchId) {
+  if (!matchId || !getFootballApiKey()) return null;
+
+  try {
+    var match = footballApiGet('/matches/' + encodeURIComponent(String(matchId)));
+    if (!match || !match.odds) return null;
+
+    return parseEuropeanOddsTriple(
+      match.odds.homeWin,
+      match.odds.draw,
+      match.odds.awayWin,
+      'football-data-odds'
+    );
+  } catch (err) {
+    return null;
+  }
+}
+
+function formatProbabilityNote(probs) {
+  if (!probs) return '';
+
+  if (probs.odds) {
+    return (
+      'Kèo châu Âu: ' +
+      probs.odds.home +
+      ' / ' +
+      probs.odds.draw +
+      ' / ' +
+      probs.odds.away +
+      ' → Nhà ' +
+      probs.home +
+      '% · Hòa ' +
+      probs.draw +
+      '% · Khách ' +
+      probs.away +
+      '%'
+    );
+  }
+
+  return (
+    'Xác suất ' +
+    probs.source +
+    ': Nhà ' +
+    probs.home +
+    '% · Hòa ' +
+    probs.draw +
+    '% · Khách ' +
+    probs.away +
+    '%'
+  );
+}
+
 function parseFotmobProbabilitiesFromPoll(poll) {
   if (!poll) return null;
+
+  if (poll.oddspoll && poll.oddspoll.Facts) {
+    for (var o = 0; o < poll.oddspoll.Facts.length; o++) {
+      var oddFact = poll.oddspoll.Facts[o];
+      if (!oddFact.StatValues || oddFact.StatValues.length < 3) continue;
+      var fromOdds = parseOddsTriple(
+        oddFact.StatValues[0],
+        oddFact.StatValues[1],
+        oddFact.StatValues[2],
+        'fotmob-odds'
+      );
+      if (fromOdds) return fromOdds;
+    }
+  }
 
   if (poll.voteResult && poll.voteResult.Votes) {
     var votes = poll.voteResult.Votes;
@@ -1202,20 +1400,6 @@ function parseFotmobProbabilitiesFromPoll(poll) {
         away: Math.round((map.away / total) * 100),
         source: 'fotmob-votes',
       };
-    }
-  }
-
-  if (poll.oddspoll && poll.oddspoll.Facts) {
-    for (var i = 0; i < poll.oddspoll.Facts.length; i++) {
-      var fact = poll.oddspoll.Facts[i];
-      if (!fact.StatValues || fact.StatValues.length < 3) continue;
-      var parsed = parseProbabilityTriple(
-        fact.StatValues[0],
-        fact.StatValues[1],
-        fact.StatValues[2],
-        'fotmob-odds'
-      );
-      if (parsed) return parsed;
     }
   }
 
@@ -1255,6 +1439,9 @@ function parseFotmobProbabilities(details) {
   var facts = details.content && details.content.matchFacts;
   var fromPoll = parseFotmobProbabilitiesFromPoll(facts && facts.poll);
   if (fromPoll) return fromPoll;
+
+  var fromOdds = findEuropeanOddsInObject(details, 0);
+  if (fromOdds) return fromOdds;
 
   return findProbabilityInObject(details, 0);
 }
@@ -1484,16 +1671,7 @@ function buildFotmobMatchInfo(details, fotmobMatchId) {
   var pickNote = '';
 
   if (winProbability) {
-    pickNote =
-      'Xác suất ' +
-      winProbability.source +
-      ': Nhà ' +
-      winProbability.home +
-      '% · Hòa ' +
-      winProbability.draw +
-      '% · Khách ' +
-      winProbability.away +
-      '%';
+    pickNote = formatProbabilityNote(winProbability);
   }
 
   var form = parseFotmobForm(details);
@@ -1545,9 +1723,21 @@ function handleGetFotMobMatchInfo(payload) {
     }
 
     var details = fetchFotmobMatchDetails(ref.id, ref.pageUrl);
+    var fotmob = buildFotmobMatchInfo(details, ref.id);
+
+    if (!fotmob.winProbability && matchId) {
+      var fdOdds = parseFootballDataOdds(matchId);
+      if (fdOdds) {
+        fotmob.winProbability = fdOdds;
+        fotmob.probabilities = fdOdds;
+        fotmob.pickSuggestion = derivePickFromProbabilities(fdOdds);
+        fotmob.pickNote = formatProbabilityNote(fdOdds);
+      }
+    }
+
     return {
       success: true,
-      fotmob: buildFotmobMatchInfo(details, ref.id),
+      fotmob: fotmob,
     };
   } catch (err) {
     return { success: false, message: err.message || 'Không thể tải dữ liệu FotMob' };

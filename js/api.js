@@ -131,3 +131,11 @@ async function getFotMobMatchInfo(username, passwordHash, match) {
     fotmobMatchId: match.fotmobMatchId || '',
   });
 }
+
+async function getMatchPredictionStats(username, passwordHash, matchId) {
+  return postAction('getMatchPredictionStats', {
+    username,
+    passwordHash,
+    matchId,
+  });
+}
