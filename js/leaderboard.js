@@ -84,8 +84,12 @@
         getPredictions(session.username, session.passwordHash),
       ]);
 
+      const players = (predResult.activeUsers || []).filter(function (user) {
+        return String(user.role || 'USER').toUpperCase() !== 'ADMIN';
+      });
+
       const rows = computeLeaderboard(
-        predResult.activeUsers || [],
+        players,
         predResult.predictions || [],
         matches
       );

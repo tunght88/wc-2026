@@ -433,6 +433,7 @@ function handleGetPredictions(payload) {
       activeUsers.push({
         username: String(usersData[a][0]),
         fullName: String(usersData[a][2]),
+        role: String(usersData[a][3]).toUpperCase(),
       });
     }
   }
@@ -999,6 +1000,35 @@ function getPlayerDisplayName(player) {
   return player.name || '';
 }
 
+function getFotmobPlayerImageUrl(player) {
+  if (!player) return '';
+
+  var direct = String(player.imageUrl || player.ImageURL || '');
+  if (/^https:\/\/images\.fotmob\.com\//i.test(direct)) {
+    return direct;
+  }
+
+  var playerId = player.id || player.ID || player.playerId;
+  if (playerId) {
+    return (
+      'https://images.fotmob.com/image_resources/playerimages/' +
+      encodeURIComponent(String(playerId)) +
+      '.png'
+    );
+  }
+
+  return '';
+}
+
+function parseFotmobPlayerEntry(player) {
+  return {
+    name: getPlayerDisplayName(player),
+    shirt: String(player.shirt || player.shirtNumber || ''),
+    imageUrl: getFotmobPlayerImageUrl(player),
+    playerId: String(player.id || player.ID || player.playerId || ''),
+  };
+}
+
 function parseFotmobTeamLineup(teamLineup, playersOut) {
   if (!teamLineup) return null;
 
@@ -1007,20 +1037,21 @@ function parseFotmobTeamLineup(teamLineup, playersOut) {
   for (var r = 0; r < rows.length; r++) {
     var row = rows[r] || [];
     for (var p = 0; p < row.length; p++) {
-      players.push({
-        name: getPlayerDisplayName(row[p]),
-        shirt: String(row[p].shirt || row[p].shirtNumber || ''),
-      });
+      players.push(parseFotmobPlayerEntry(row[p]));
     }
   }
 
   if (teamLineup.optaLineup && teamLineup.optaLineup.starting) {
-    players = teamLineup.optaLineup.starting.map(function (pl) {
-      return {
-        name: getPlayerDisplayName(pl),
-        shirt: String(pl.shirt || pl.shirtNumber || ''),
-      };
-    });
+    players = teamLineup.optaLineup.starting.map(parseFotmobPlayerEntry);
+  } else if (teamLineup.optaLineup && teamLineup.optaLineup.players) {
+    players = [];
+    var optaRows = teamLineup.optaLineup.players || [];
+    for (var or = 0; or < optaRows.length; or++) {
+      var optaRow = optaRows[or] || [];
+      for (var op = 0; op < optaRow.length; op++) {
+        players.push(parseFotmobPlayerEntry(optaRow[op]));
+      }
+    }
   }
 
   return {
@@ -1041,9 +1072,7 @@ function parseFotmobLineup(details) {
     result.home = {
       name: lineup.homeTeam.name || (general.homeTeam && general.homeTeam.name) || '',
       formation: lineup.homeTeam.formation || '',
-      players: (lineup.homeTeam.starters || []).map(function (p) {
-        return { name: p.name || '', shirt: String(p.shirtNumber || '') };
-      }),
+      players: (lineup.homeTeam.starters || []).map(parseFotmobPlayerEntry),
     };
   }
 
@@ -1051,9 +1080,7 @@ function parseFotmobLineup(details) {
     result.away = {
       name: lineup.awayTeam.name || (general.awayTeam && general.awayTeam.name) || '',
       formation: lineup.awayTeam.formation || '',
-      players: (lineup.awayTeam.starters || []).map(function (p) {
-        return { name: p.name || '', shirt: String(p.shirtNumber || '') };
-      }),
+      players: (lineup.awayTeam.starters || []).map(parseFotmobPlayerEntry),
     };
   }
 

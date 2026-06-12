@@ -49,14 +49,56 @@
     return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
   }
 
+  function isSafePlayerImageUrl(url) {
+    return /^https:\/\/images\.fotmob\.com\//i.test(String(url || ''));
+  }
+
+  function getPlayerImageUrl(entry) {
+    if (isSafePlayerImageUrl(entry.imageUrl)) return entry.imageUrl;
+    if (entry.playerId) {
+      return (
+        'https://images.fotmob.com/image_resources/playerimages/' +
+        encodeURIComponent(String(entry.playerId)) +
+        '.png'
+      );
+    }
+    return '';
+  }
+
+  function renderLineupPlayerAvatar(entry) {
+    const shirt = entry.shirt ? escapeHtml(entry.shirt) : '?';
+    const imageUrl = getPlayerImageUrl(entry);
+
+    if (imageUrl) {
+      return (
+        '<span class="lineup-player-avatar">' +
+          '<img class="lineup-player-photo" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy"' +
+            ' onerror="this.style.display=\'none\'; this.parentElement.classList.add(\'lineup-player-avatar-fallback\');">' +
+          '<span class="lineup-player-shirt">' + shirt + '</span>' +
+        '</span>'
+      );
+    }
+
+    return (
+      '<span class="lineup-player-avatar lineup-player-avatar-fallback">' +
+        '<span class="lineup-player-shirt">' + shirt + '</span>' +
+      '</span>'
+    );
+  }
+
   function renderLineupPlayers(players) {
     if (!players || players.length === 0) return '';
     return (
       '<ul class="lineup-list">' +
       players
         .map(function (entry) {
-          const shirt = entry.shirt ? entry.shirt + '. ' : '';
-          return '<li>' + escapeHtml(shirt + (entry.name || '')) + '</li>';
+          const label = (entry.shirt ? entry.shirt + '. ' : '') + (entry.name || '');
+          return (
+            '<li class="lineup-player">' +
+              renderLineupPlayerAvatar(entry) +
+              '<span class="lineup-player-name">' + escapeHtml(label) + '</span>' +
+            '</li>'
+          );
         })
         .join('') +
       '</ul>'
