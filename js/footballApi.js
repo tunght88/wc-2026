@@ -23,6 +23,100 @@ const STAGE_LABELS = {
   THIRD_PLACE: 'Tranh hạng 3',
 };
 
+const STAGE_PENALTIES = {
+  GROUP_STAGE: 1,
+  LAST_32: 2,
+  ROUND_OF_32: 2,
+  LAST_16: 3,
+  ROUND_OF_16: 3,
+  QUARTER_FINALS: 4,
+  SEMI_FINALS: 5,
+  THIRD_PLACE: 10,
+  FINAL: 20,
+};
+
+const STAGE_PENALTY_LEGEND = [
+  { label: 'Vòng bảng', penalty: 1, stages: ['GROUP_STAGE'] },
+  { label: 'Vòng 32 đội', penalty: 2, stages: ['LAST_32', 'ROUND_OF_32'] },
+  { label: 'Vòng 16 đội', penalty: 3, stages: ['LAST_16', 'ROUND_OF_16'] },
+  { label: 'Tứ kết', penalty: 4, stages: ['QUARTER_FINALS'] },
+  { label: 'Bán kết', penalty: 5, stages: ['SEMI_FINALS'] },
+  { label: 'Tranh hạng 3-4', penalty: 10, stages: ['THIRD_PLACE'] },
+  { label: 'Chung kết', penalty: 20, stages: ['FINAL'] },
+];
+
+function getStagePenalty(stage) {
+  return STAGE_PENALTIES[stage] || 1;
+}
+
+function getFinishedMatchesWithResult(matches) {
+  return matches.filter(function (m) {
+    return m.status === 'FINISHED' && getActualResult(m);
+  });
+}
+
+function buildPredictionMap(predictions) {
+  const map = {};
+  predictions.forEach(function (p) {
+    if (!map[p.username]) map[p.username] = {};
+    map[p.username][String(p.matchId)] = p.prediction;
+  });
+  return map;
+}
+
+function createLeaderboardEntry(user) {
+  return {
+    username: user.username,
+    fullName: user.fullName,
+    penalties: 0,
+    correct: 0,
+    wrong: 0,
+    missed: 0,
+    total: 0,
+  };
+}
+
+function computeLeaderboard(activeUsers, predictions, matches) {
+  const scores = {};
+  activeUsers.forEach(function (user) {
+    scores[user.username] = createLeaderboardEntry(user);
+  });
+
+  const predMap = buildPredictionMap(predictions);
+  const finishedMatches = getFinishedMatchesWithResult(matches);
+
+  finishedMatches.forEach(function (match) {
+    const matchId = String(match.id);
+    const actual = getActualResult(match);
+    const penalty = getStagePenalty(match.stage);
+
+    activeUsers.forEach(function (user) {
+      const entry = scores[user.username];
+      const prediction = predMap[user.username] && predMap[user.username][matchId];
+
+      entry.total++;
+
+      if (!prediction) {
+        entry.penalties += penalty;
+        entry.missed++;
+      } else if (prediction === actual) {
+        entry.correct++;
+      } else {
+        entry.penalties += penalty;
+        entry.wrong++;
+      }
+    });
+  });
+
+  return Object.values(scores).sort(function (a, b) {
+    if (a.penalties !== b.penalties) return a.penalties - b.penalties;
+    if (b.correct !== a.correct) return b.correct - a.correct;
+    if (a.wrong !== b.wrong) return a.wrong - b.wrong;
+    if (a.missed !== b.missed) return a.missed - b.missed;
+    return a.fullName.localeCompare(b.fullName, 'vi');
+  });
+}
+
 function getFootballSession() {
   const session = getSession();
   if (!session) {

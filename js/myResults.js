@@ -14,7 +14,9 @@
         '<div class="stat-card"><div class="stat-value">' + stats.total + '</div><div class="stat-label">Đã dự đoán</div></div>' +
         '<div class="stat-card"><div class="stat-value">' + stats.finished + '</div><div class="stat-label">Trận đã kết thúc</div></div>' +
         '<div class="stat-card"><div class="stat-value">' + stats.correct + '</div><div class="stat-label">Dự đoán đúng</div></div>' +
-        '<div class="stat-card"><div class="stat-value">' + stats.points + '</div><div class="stat-label">Điểm</div></div>' +
+        '<div class="stat-card"><div class="stat-value">' + stats.penalties + '</div><div class="stat-label">Điểm phạt</div></div>' +
+        '<div class="stat-card"><div class="stat-value">' + stats.wrong + '</div><div class="stat-label">Sai</div></div>' +
+        '<div class="stat-card"><div class="stat-value">' + stats.missed + '</div><div class="stat-label">Chưa dự đoán</div></div>' +
       '</div>';
   }
 
@@ -36,6 +38,7 @@
             '<th>Dự đoán của tôi</th>' +
             '<th>Kết quả thực tế</th>' +
             '<th>Đúng/Sai</th>' +
+            '<th>Phạt</th>' +
           '</tr></thead><tbody>';
 
     rows.forEach(function (row) {
@@ -48,6 +51,7 @@
           '<td>' + escapeHtml(row.myPrediction) + '</td>' +
           '<td>' + escapeHtml(row.actualResult) + '</td>' +
           '<td>' + row.resultBadge + '</td>' +
+          '<td>' + escapeHtml(row.penaltyLabel) + '</td>' +
         '</tr>';
     });
 
@@ -73,8 +77,33 @@
         return p.username === session.username;
       });
 
-      const stats = { total: myPreds.length, finished: 0, correct: 0, points: 0 };
+      const stats = { total: myPreds.length, finished: 0, correct: 0, wrong: 0, missed: 0, penalties: 0 };
       const rows = [];
+      const myPredMap = {};
+
+      myPreds.forEach(function (pred) {
+        myPredMap[String(pred.matchId)] = pred.prediction;
+      });
+
+      getFinishedMatchesWithResult(matches).forEach(function (match) {
+        const matchId = String(match.id);
+        const prediction = myPredMap[matchId];
+        const penalty = getStagePenalty(match.stage);
+
+        stats.finished++;
+        if (!prediction) {
+          stats.missed++;
+          stats.penalties += penalty;
+        } else {
+          const actual = getActualResult(match);
+          if (prediction === actual) {
+            stats.correct++;
+          } else {
+            stats.wrong++;
+            stats.penalties += penalty;
+          }
+        }
+      });
 
       myPreds.forEach(function (pred) {
         const match = matchMap[pred.matchId];
@@ -84,16 +113,17 @@
         const myLabel = getPredictionLabel(pred.prediction, match);
         let actualLabel = 'Chưa có kết quả';
         let resultBadge = '<span class="badge badge-pending">Chờ kết quả</span>';
+        let penaltyLabel = '-';
 
         if (actual) {
-          stats.finished++;
           actualLabel = getPredictionLabel(actual, match);
+          const penalty = getStagePenalty(match.stage);
           if (pred.prediction === actual) {
-            stats.correct++;
-            stats.points++;
             resultBadge = '<span class="badge badge-correct">✓ Đúng</span>';
+            penaltyLabel = '0';
           } else {
             resultBadge = '<span class="badge badge-wrong">✗ Sai</span>';
+            penaltyLabel = '+' + penalty;
           }
         }
 
@@ -106,6 +136,7 @@
           myPrediction: myLabel,
           actualResult: actualLabel,
           resultBadge: resultBadge,
+          penaltyLabel: penaltyLabel,
           sortDate: new Date(match.utcDate).getTime(),
         });
       });

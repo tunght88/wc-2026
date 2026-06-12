@@ -680,6 +680,35 @@ body {
   margin-top: 0.25rem;
 }
 
+.leaderboard-legend {
+  margin-bottom: 1rem;
+}
+
+.leaderboard-legend-desc {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.penalty-legend-table {
+  font-size: 0.8rem;
+}
+
+.penalty-score {
+  color: #dc2626;
+}
+
+.text-correct {
+  color: #166534;
+  font-weight: 600;
+}
+
+.text-wrong {
+  color: #991b1b;
+  font-weight: 600;
+}
+
 .btn-match-info {
   display: inline-flex;
   align-items: center;

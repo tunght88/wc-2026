@@ -7,53 +7,32 @@
   const leaderboardContainer = document.getElementById('leaderboard-container');
   const errorBanner = document.getElementById('error-banner');
 
-  function computeLeaderboard(activeUsers, predictions, matchMap) {
-    const scores = {};
+  function renderPenaltyLegend() {
+    let html =
+      '<div class="leaderboard-legend wc-card">' +
+        '<div class="wc-card-title">Quy tắc điểm phạt</div>' +
+        '<p class="leaderboard-legend-desc">Dự đoán <strong>sai</strong> hoặc <strong>không dự đoán</strong> sẽ cộng điểm phạt theo vòng đấu. ' +
+        'Xếp hạng theo <strong>điểm phạt thấp nhất</strong> (đúng = 0 điểm phạt).</p>' +
+        '<div class="table-wrapper">' +
+          '<table class="data-table penalty-legend-table">' +
+            '<thead><tr><th>Vòng đấu</th><th>Điểm phạt</th></tr></thead><tbody>';
 
-    activeUsers.forEach(function (user) {
-      scores[user.username] = {
-        username: user.username,
-        fullName: user.fullName,
-        points: 0,
-        correct: 0,
-        total: 0,
-      };
+    STAGE_PENALTY_LEGEND.forEach(function (item) {
+      html +=
+        '<tr>' +
+          '<td>' + escapeHtml(item.label) + '</td>' +
+          '<td><strong>+' + item.penalty + '</strong></td>' +
+        '</tr>';
     });
 
-    predictions.forEach(function (pred) {
-      const match = matchMap[pred.matchId];
-      if (!match || match.status !== 'FINISHED') return;
-
-      if (!scores[pred.username]) {
-        scores[pred.username] = {
-          username: pred.username,
-          fullName: pred.fullName || pred.username,
-          points: 0,
-          correct: 0,
-          total: 0,
-        };
-      }
-
-      const actual = getActualResult(match);
-      if (!actual) return;
-
-      scores[pred.username].total++;
-      if (pred.prediction === actual) {
-        scores[pred.username].points++;
-        scores[pred.username].correct++;
-      }
-    });
-
-    return Object.values(scores).sort(function (a, b) {
-      if (b.points !== a.points) return b.points - a.points;
-      if (b.correct !== a.correct) return b.correct - a.correct;
-      return a.fullName.localeCompare(b.fullName, 'vi');
-    });
+    html += '</tbody></table></div></div>';
+    return html;
   }
 
   function renderLeaderboard(rows) {
     if (rows.length === 0) {
       leaderboardContainer.innerHTML =
+        renderPenaltyLegend() +
         '<div class="empty-state">' +
           '<div class="empty-state-icon">🏆</div>' +
           '<p>Chưa có dữ liệu bảng xếp hạng</p>' +
@@ -61,16 +40,20 @@
       return;
     }
 
-    let html =
+    let html = renderPenaltyLegend();
+
+    html +=
       '<div class="wc-card">' +
         '<div class="table-wrapper">' +
           '<table class="data-table">' +
             '<thead><tr>' +
               '<th class="rank-col">Hạng</th>' +
               '<th>Tên</th>' +
-              '<th>Điểm</th>' +
-              '<th>Số trận đúng</th>' +
-              '<th>Số trận đã dự đoán</th>' +
+              '<th>Điểm phạt</th>' +
+              '<th>Đúng</th>' +
+              '<th>Sai</th>' +
+              '<th>Chưa dự đoán</th>' +
+              '<th>Trận đã tính</th>' +
             '</tr></thead><tbody>';
 
     rows.forEach(function (row, index) {
@@ -80,8 +63,10 @@
         '<tr>' +
           '<td class="rank-col">' + medal + rank + '</td>' +
           '<td class="font-semibold">' + escapeHtml(row.fullName) + '</td>' +
-          '<td><strong>' + row.points + '</strong></td>' +
-          '<td>' + row.correct + '</td>' +
+          '<td><strong class="penalty-score">' + row.penalties + '</strong></td>' +
+          '<td class="text-correct">' + row.correct + '</td>' +
+          '<td class="text-wrong">' + row.wrong + '</td>' +
+          '<td>' + row.missed + '</td>' +
           '<td>' + row.total + '</td>' +
         '</tr>';
     });
@@ -99,15 +84,10 @@
         getPredictions(session.username, session.passwordHash),
       ]);
 
-      const matchMap = {};
-      matches.forEach(function (m) {
-        matchMap[String(m.id)] = m;
-      });
-
       const rows = computeLeaderboard(
         predResult.activeUsers || [],
         predResult.predictions || [],
-        matchMap
+        matches
       );
 
       renderLeaderboard(rows);
