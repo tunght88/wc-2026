@@ -1,4 +1,4 @@
-const CACHE_KEY = 'wc2026_matches_cache';
+const CACHE_KEY = 'wc2026_matches_cache_v2';
 const CACHE_TTL = 5 * 60 * 1000;
 
 const STAGE_FILTERS = {
@@ -134,6 +134,10 @@ function getCachedMatches() {
       sessionStorage.removeItem(CACHE_KEY);
       return null;
     }
+    if (matchesCacheNeedsRefresh(cached.matches)) {
+      sessionStorage.removeItem(CACHE_KEY);
+      return null;
+    }
     return cached.matches;
   } catch {
     return null;
@@ -238,23 +242,78 @@ async function getFinishedMatches() {
 }
 
 function mapWinnerToPrediction(winner) {
-  if (winner === 'HOME_TEAM') return 'HOME';
-  if (winner === 'AWAY_TEAM') return 'AWAY';
-  if (winner === 'DRAW') return 'DRAW';
+  const w = String(winner || '').toUpperCase();
+  if (w === 'HOME_TEAM' || w === 'HOME') return 'HOME';
+  if (w === 'AWAY_TEAM' || w === 'AWAY') return 'AWAY';
+  if (w === 'DRAW') return 'DRAW';
   return null;
 }
 
+function getScoreGoals(scorePart) {
+  if (!scorePart) return { home: null, away: null };
+  let home = scorePart.home;
+  let away = scorePart.away;
+  if (home === undefined || home === null) home = scorePart.homeTeam;
+  if (away === undefined || away === null) away = scorePart.awayTeam;
+  return { home: home, away: away };
+}
+
+function deriveResultFromScore(score) {
+  if (!score) return null;
+
+  const fromWinner = mapWinnerToPrediction(score.winner);
+  if (fromWinner) return fromWinner;
+
+  const fullTime = getScoreGoals(score.fullTime);
+  let home = fullTime.home;
+  let away = fullTime.away;
+
+  if (score.penalties) {
+    const pen = getScoreGoals(score.penalties);
+    if (pen.home !== null && pen.away !== null && pen.home !== pen.away) {
+      return pen.home > pen.away ? 'HOME' : 'AWAY';
+    }
+  }
+
+  if (score.extraTime) {
+    const extra = getScoreGoals(score.extraTime);
+    if (extra.home !== null && extra.away !== null) {
+      home = extra.home;
+      away = extra.away;
+    }
+  }
+
+  if (home === null || home === undefined || away === null || away === undefined) {
+    return null;
+  }
+  if (home > away) return 'HOME';
+  if (away > home) return 'AWAY';
+  return 'DRAW';
+}
+
 function getActualResult(match) {
-  if (match.status !== 'FINISHED' || !match.score) return null;
-  return mapWinnerToPrediction(match.score.winner);
+  if (!match.score || match.status !== 'FINISHED') return null;
+  return deriveResultFromScore(match.score);
 }
 
 function getMatchScore(match) {
   if (!match.score || !match.score.fullTime) return null;
-  const home = match.score.fullTime.home;
-  const away = match.score.fullTime.away;
-  if (home === null || away === null) return null;
-  return home + ' - ' + away;
+  const goals = getScoreGoals(match.score.fullTime);
+  if (goals.home === null || goals.away === null) return null;
+  return goals.home + ' - ' + goals.away;
+}
+
+function matchesCacheNeedsRefresh(matches) {
+  if (!matches || !matches.length) return false;
+
+  const now = Date.now();
+  const staleAfterMs = 3 * 60 * 60 * 1000;
+
+  return matches.some(function (m) {
+    if (m.status === 'FINISHED') return false;
+    const kickoff = new Date(m.utcDate).getTime();
+    return kickoff < now - staleAfterMs;
+  });
 }
 
 function formatMatchDate(utcDate) {
