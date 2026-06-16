@@ -1428,11 +1428,29 @@ function parseProbabilityTriple(home, draw, away, source) {
   };
 }
 
+function coerceOddsNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    var cleaned = String(value).trim().replace(',', '.').replace(/[^\d.]/g, '');
+    if (!cleaned) return null;
+    var parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? null : parsed;
+  }
+  if (typeof value === 'object') {
+    if (value.value !== undefined) return coerceOddsNumber(value.value);
+    if (value.Value !== undefined) return coerceOddsNumber(value.Value);
+    if (value.name !== undefined) return coerceOddsNumber(value.name);
+    if (value.Name !== undefined) return coerceOddsNumber(value.Name);
+  }
+  return null;
+}
+
 function parseEuropeanOddsTriple(home, draw, away, source) {
-  var h = Number(home);
-  var d = Number(draw);
-  var a = Number(away);
-  if (isNaN(h) || isNaN(d) || isNaN(a)) return null;
+  var h = coerceOddsNumber(home);
+  var d = coerceOddsNumber(draw);
+  var a = coerceOddsNumber(away);
+  if (h === null || d === null || a === null) return null;
   if (h < 1.01 || d < 1.01 || a < 1.01) return null;
   if (h > 500 || d > 500 || a > 500) return null;
   if (h + d + a >= 90 && h + d + a <= 110) return null;
@@ -1482,6 +1500,23 @@ function findEuropeanOddsInObject(node, depth) {
       if (fromWinKeys) return fromWinKeys;
     }
 
+    if (
+      node.home !== undefined &&
+      node.draw !== undefined &&
+      node.away !== undefined &&
+      !node.matches &&
+      node.homeWin === undefined &&
+      node.awayWin === undefined
+    ) {
+      var fromHomeKeys = parseEuropeanOddsTriple(
+        node.home,
+        node.draw,
+        node.away,
+        'fotmob-odds'
+      );
+      if (fromHomeKeys) return fromHomeKeys;
+    }
+
     if (node.odds && typeof node.odds === 'object') {
       var fromOdds = parseEuropeanOddsTriple(
         node.odds.homeWin || node.odds.home,
@@ -1502,12 +1537,127 @@ function findEuropeanOddsInObject(node, depth) {
   return null;
 }
 
+function getOddspollFacts(poll) {
+  if (!poll) return [];
+  var oddspoll = poll.oddspoll || poll.oddsPoll || poll.Oddspoll;
+  if (!oddspoll) return [];
+  return oddspoll.Facts || oddspoll.facts || [];
+}
+
+function isEuropeanOddsFact(fact) {
+  if (!fact) return true;
+  var oddsType = String(fact.OddsType || fact.oddsType || '').toLowerCase();
+  if (!oddsType) return true;
+  if (
+    oddsType.indexOf('over') !== -1 ||
+    oddsType.indexOf('under') !== -1 ||
+    oddsType.indexOf('both') !== -1 ||
+    oddsType.indexOf('btts') !== -1 ||
+    oddsType.indexOf('handicap') !== -1 ||
+    oddsType.indexOf('corner') !== -1
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function extractEuropeanOddValues(fact) {
+  if (!fact) return null;
+  var raw = fact.StatValues || fact.statValues || fact.Values || fact.values;
+  if (!raw || raw.length < 3) return null;
+
+  var values = [];
+  for (var i = 0; i < raw.length; i++) {
+    var num = coerceOddsNumber(raw[i]);
+    if (num === null) return null;
+    values.push(num);
+  }
+  return values.length >= 3 ? values.slice(0, 3) : null;
+}
+
+function parseFotmobEuropeanOddsFromPoll(poll) {
+  var facts = getOddspollFacts(poll);
+  for (var o = 0; o < facts.length; o++) {
+    var oddFact = facts[o];
+    if (!isEuropeanOddsFact(oddFact)) continue;
+    var values = extractEuropeanOddValues(oddFact);
+    if (!values) continue;
+    var fromOdds = parseEuropeanOddsTriple(
+      values[0],
+      values[1],
+      values[2],
+      'fotmob-odds'
+    );
+    if (fromOdds && fromOdds.odds) return fromOdds;
+  }
+  return null;
+}
+
+function fetchFotmobMatchOdds(fotmobMatchId) {
+  if (!fotmobMatchId) return null;
+
+  var paths = ['/oddspoll', '/matchOdds', '/odds'];
+  for (var i = 0; i < paths.length; i++) {
+    var data =
+      fotmobFetchData(paths[i], { matchId: fotmobMatchId }) ||
+      fotmobFetchLegacy(paths[i], { matchId: fotmobMatchId });
+    if (!data) continue;
+
+    var fromPoll = parseFotmobEuropeanOddsFromPoll(data.poll || data);
+    if (fromPoll) return fromPoll;
+
+    var fromObj = findEuropeanOddsInObject(data, 0);
+    if (fromObj) return fromObj;
+  }
+
+  return null;
+}
+
+function parseFotmobEuropeanOddsOnly(details) {
+  if (!details) return null;
+
+  var facts = details.content && details.content.matchFacts;
+  var fromPoll = parseFotmobEuropeanOddsFromPoll(facts && facts.poll);
+  if (fromPoll) return fromPoll;
+
+  return findEuropeanOddsInObject(details, 0);
+}
+
+function resolveWinProbabilityWithOdds(details, fotmobMatchId, footballMatchId, pageUrl) {
+  var fallback = parseFotmobProbabilities(details);
+  var fromDetails = parseFotmobEuropeanOddsOnly(details);
+  if (fromDetails) return fromDetails;
+
+  if (pageUrl) {
+    var pageDetails = tryFotmobPageDetails(pageUrl);
+    if (pageDetails) {
+      var fromPage = parseFotmobEuropeanOddsOnly(pageDetails);
+      if (fromPage) return fromPage;
+    }
+  }
+
+  var fromFotmobOdds = fetchFotmobMatchOdds(fotmobMatchId);
+  if (fromFotmobOdds) return fromFotmobOdds;
+
+  var fromFootballData = parseFootballDataOdds(footballMatchId);
+  if (fromFootballData) return fromFootballData;
+
+  return fallback;
+}
+
 function parseFootballDataOdds(matchId) {
   if (!matchId || !getFootballApiKey()) return null;
 
   try {
     var match = footballApiGet('/matches/' + encodeURIComponent(String(matchId)));
     if (!match || !match.odds) return null;
+    if (
+      match.odds.homeWin == null ||
+      match.odds.draw == null ||
+      match.odds.awayWin == null
+    ) {
+      return null;
+    }
 
     return parseEuropeanOddsTriple(
       match.odds.homeWin,
@@ -1554,51 +1704,42 @@ function formatProbabilityNote(probs) {
   );
 }
 
+function parseFotmobVotesFromPoll(poll) {
+  if (!poll || !poll.voteResult || !poll.voteResult.Votes) return null;
+
+  var votes = poll.voteResult.Votes;
+  var total = 0;
+  var map = { home: 0, draw: 0, away: 0 };
+
+  votes.forEach(function (v) {
+    var count = 0;
+    if (v.Votes && v.Votes.length) count = Number(v.Votes[0]) || 0;
+    else if (v.votes && v.votes.length) count = Number(v.votes[0]) || 0;
+    total += count;
+
+    var name = String(v.Name || v.name || '').toLowerCase();
+    if (name === '1' || name === 'home' || name.indexOf('home') !== -1) map.home = count;
+    else if (name === 'x' || name === 'draw' || name.indexOf('draw') !== -1) map.draw = count;
+    else if (name === '2' || name === 'away' || name.indexOf('away') !== -1) map.away = count;
+  });
+
+  if (total <= 0) return null;
+
+  return {
+    home: Math.round((map.home / total) * 100),
+    draw: Math.round((map.draw / total) * 100),
+    away: Math.round((map.away / total) * 100),
+    source: 'fotmob-votes',
+  };
+}
+
 function parseFotmobProbabilitiesFromPoll(poll) {
   if (!poll) return null;
 
-  if (poll.oddspoll && poll.oddspoll.Facts) {
-    for (var o = 0; o < poll.oddspoll.Facts.length; o++) {
-      var oddFact = poll.oddspoll.Facts[o];
-      if (!oddFact.StatValues || oddFact.StatValues.length < 3) continue;
-      var fromOdds = parseOddsTriple(
-        oddFact.StatValues[0],
-        oddFact.StatValues[1],
-        oddFact.StatValues[2],
-        'fotmob-odds'
-      );
-      if (fromOdds) return fromOdds;
-    }
-  }
+  var fromOdds = parseFotmobEuropeanOddsFromPoll(poll);
+  if (fromOdds) return fromOdds;
 
-  if (poll.voteResult && poll.voteResult.Votes) {
-    var votes = poll.voteResult.Votes;
-    var total = 0;
-    var map = { home: 0, draw: 0, away: 0 };
-
-    votes.forEach(function (v) {
-      var count = 0;
-      if (v.Votes && v.Votes.length) count = Number(v.Votes[0]) || 0;
-      else if (v.votes && v.votes.length) count = Number(v.votes[0]) || 0;
-      total += count;
-
-      var name = String(v.Name || v.name || '').toLowerCase();
-      if (name === '1' || name === 'home' || name.indexOf('home') !== -1) map.home = count;
-      else if (name === 'x' || name === 'draw' || name.indexOf('draw') !== -1) map.draw = count;
-      else if (name === '2' || name === 'away' || name.indexOf('away') !== -1) map.away = count;
-    });
-
-    if (total > 0) {
-      return {
-        home: Math.round((map.home / total) * 100),
-        draw: Math.round((map.draw / total) * 100),
-        away: Math.round((map.away / total) * 100),
-        source: 'fotmob-votes',
-      };
-    }
-  }
-
-  return null;
+  return parseFotmobVotesFromPoll(poll);
 }
 
 function findProbabilityInObject(node, depth) {
@@ -1632,13 +1773,18 @@ function findProbabilityInObject(node, depth) {
 
 function parseFotmobProbabilities(details) {
   var facts = details.content && details.content.matchFacts;
-  var fromPoll = parseFotmobProbabilitiesFromPoll(facts && facts.poll);
-  if (fromPoll) return fromPoll;
+  var poll = facts && facts.poll;
 
-  var fromOdds = findEuropeanOddsInObject(details, 0);
+  var fromOdds = parseFotmobEuropeanOddsFromPoll(poll);
   if (fromOdds) return fromOdds;
 
-  return findProbabilityInObject(details, 0);
+  fromOdds = findEuropeanOddsInObject(details, 0);
+  if (fromOdds) return fromOdds;
+
+  var fromProb = findProbabilityInObject(details, 0);
+  if (fromProb) return fromProb;
+
+  return parseFotmobVotesFromPoll(poll);
 }
 
 function parseFotmobFormMatchItem(item) {
@@ -1860,8 +2006,13 @@ function derivePickFromProbabilities(probs) {
   return 'DRAW';
 }
 
-function buildFotmobMatchInfo(details, fotmobMatchId) {
-  var winProbability = parseFotmobProbabilities(details);
+function buildFotmobMatchInfo(details, fotmobMatchId, footballMatchId, pageUrl) {
+  var winProbability = resolveWinProbabilityWithOdds(
+    details,
+    fotmobMatchId,
+    footballMatchId,
+    pageUrl
+  );
   var pickSuggestion = derivePickFromProbabilities(winProbability);
   var pickNote = '';
 
@@ -1927,17 +2078,7 @@ function handleGetFotMobMatchInfo(payload) {
     }
 
     var details = fetchFotmobMatchDetails(ref.id, ref.pageUrl);
-    var fotmob = buildFotmobMatchInfo(details, ref.id);
-
-    if (!fotmob.winProbability && matchId) {
-      var fdOdds = parseFootballDataOdds(matchId);
-      if (fdOdds) {
-        fotmob.winProbability = fdOdds;
-        fotmob.probabilities = fdOdds;
-        fotmob.pickSuggestion = derivePickFromProbabilities(fdOdds);
-        fotmob.pickNote = formatProbabilityNote(fdOdds);
-      }
-    }
+    var fotmob = buildFotmobMatchInfo(details, ref.id, matchId, ref.pageUrl);
 
     return {
       success: true,
