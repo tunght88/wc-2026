@@ -1484,54 +1484,62 @@ function parseOddsTriple(home, draw, away, source) {
 function findEuropeanOddsInObject(node, depth) {
   if (!node || depth > 12) return null;
 
-  if (typeof node === 'object' && !Array.isArray(node)) {
-    if (
-      node.homeWin !== undefined &&
-      node.draw !== undefined &&
-      node.awayWin !== undefined &&
-      !node.matches
-    ) {
-      var fromWinKeys = parseEuropeanOddsTriple(
-        node.homeWin,
-        node.draw,
-        node.awayWin,
-        'fotmob-odds'
-      );
-      if (fromWinKeys) return fromWinKeys;
+  if (Array.isArray(node)) {
+    for (var i = 0; i < node.length; i++) {
+      var foundInArray = findEuropeanOddsInObject(node[i], depth + 1);
+      if (foundInArray) return foundInArray;
     }
+    return null;
+  }
 
-    if (
-      node.home !== undefined &&
-      node.draw !== undefined &&
-      node.away !== undefined &&
-      !node.matches &&
-      node.homeWin === undefined &&
-      node.awayWin === undefined
-    ) {
-      var fromHomeKeys = parseEuropeanOddsTriple(
-        node.home,
-        node.draw,
-        node.away,
-        'fotmob-odds'
-      );
-      if (fromHomeKeys) return fromHomeKeys;
-    }
+  if (typeof node !== 'object') return null;
 
-    if (node.odds && typeof node.odds === 'object') {
-      var fromOdds = parseEuropeanOddsTriple(
-        node.odds.homeWin || node.odds.home,
-        node.odds.draw,
-        node.odds.awayWin || node.odds.away,
-        'fotmob-odds'
-      );
-      if (fromOdds) return fromOdds;
-    }
+  if (
+    node.homeWin !== undefined &&
+    node.draw !== undefined &&
+    node.awayWin !== undefined &&
+    !node.matches
+  ) {
+    var fromWinKeys = parseEuropeanOddsTriple(
+      node.homeWin,
+      node.draw,
+      node.awayWin,
+      'fotmob-odds'
+    );
+    if (fromWinKeys) return fromWinKeys;
+  }
 
-    var keys = Object.keys(node);
-    for (var k = 0; k < keys.length; k++) {
-      var found = findEuropeanOddsInObject(node[keys[k]], depth + 1);
-      if (found) return found;
-    }
+  if (
+    node.home !== undefined &&
+    node.draw !== undefined &&
+    node.away !== undefined &&
+    !node.matches &&
+    node.homeWin === undefined &&
+    node.awayWin === undefined
+  ) {
+    var fromHomeKeys = parseEuropeanOddsTriple(
+      node.home,
+      node.draw,
+      node.away,
+      'fotmob-odds'
+    );
+    if (fromHomeKeys) return fromHomeKeys;
+  }
+
+  if (node.odds && typeof node.odds === 'object') {
+    var fromOdds = parseEuropeanOddsTriple(
+      node.odds.homeWin || node.odds.home,
+      node.odds.draw,
+      node.odds.awayWin || node.odds.away,
+      'fotmob-odds'
+    );
+    if (fromOdds) return fromOdds;
+  }
+
+  var keys = Object.keys(node);
+  for (var k = 0; k < keys.length; k++) {
+    var found = findEuropeanOddsInObject(node[keys[k]], depth + 1);
+    if (found) return found;
   }
 
   return null;
@@ -1745,27 +1753,35 @@ function parseFotmobProbabilitiesFromPoll(poll) {
 function findProbabilityInObject(node, depth) {
   if (!node || depth > 12) return null;
 
-  if (typeof node === 'object' && !Array.isArray(node)) {
-    if (
-      node.home !== undefined &&
-      node.draw !== undefined &&
-      node.away !== undefined &&
-      !node.matches
-    ) {
-      var direct = parseProbabilityTriple(node.home, node.draw, node.away, 'fotmob');
-      if (direct) return direct;
+  if (Array.isArray(node)) {
+    for (var i = 0; i < node.length; i++) {
+      var foundInArray = findProbabilityInObject(node[i], depth + 1);
+      if (foundInArray) return foundInArray;
     }
+    return null;
+  }
 
-    if (node.winProbability) {
-      var nested = findProbabilityInObject(node.winProbability, depth + 1);
-      if (nested) return nested;
-    }
+  if (typeof node !== 'object') return null;
 
-    var keys = Object.keys(node);
-    for (var k = 0; k < keys.length; k++) {
-      var found = findProbabilityInObject(node[keys[k]], depth + 1);
-      if (found) return found;
-    }
+  if (
+    node.home !== undefined &&
+    node.draw !== undefined &&
+    node.away !== undefined &&
+    !node.matches
+  ) {
+    var direct = parseProbabilityTriple(node.home, node.draw, node.away, 'fotmob');
+    if (direct) return direct;
+  }
+
+  if (node.winProbability) {
+    var nested = findProbabilityInObject(node.winProbability, depth + 1);
+    if (nested) return nested;
+  }
+
+  var keys = Object.keys(node);
+  for (var k = 0; k < keys.length; k++) {
+    var found = findProbabilityInObject(node[keys[k]], depth + 1);
+    if (found) return found;
   }
 
   return null;
