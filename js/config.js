@@ -1,3 +1,3 @@
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwdsnQssF7EWHK91Itsr2SGYaK9tkFH6TkcSDSFLu8sZNAQGzLbtSORQ3UCHq_BsFB2aA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxShqKoFvpjL6a1jaI6tDcUSh8DuSPPqtcgtS7ams3Ev9b9q7TbR9xmAYamQVOrhzcWYw/exec';
 const WC_COMPETITION_CODE = 'WC';
 const WC_SEASON = 2026;

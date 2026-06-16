@@ -1631,7 +1631,57 @@ function parseFotmobEuropeanOddsOnly(details) {
   return findEuropeanOddsInObject(details, 0);
 }
 
-function resolveWinProbabilityWithOdds(details, fotmobMatchId, footballMatchId, pageUrl) {
+function tryFotmobOddsFromOtherPages(fotmobMatchId, homeName, awayName, pageUrl) {
+  var candidates = [];
+
+  if (pageUrl) {
+    candidates.push(pageUrl + '/odds');
+    candidates.push(pageUrl + '/match/odds');
+  }
+
+  if (homeName && awayName) {
+    var slug1 = buildFotmobMatchSlug(homeName, awayName);
+    var slug2 = buildFotmobMatchSlug(awayName, homeName);
+
+    if (slug1) {
+      candidates.push('/matches/odds-' + slug1);
+      candidates.push('/matches/' + slug1 + '/odds');
+    }
+    if (slug2) {
+      candidates.push('/matches/odds-' + slug2);
+      candidates.push('/matches/' + slug2 + '/odds');
+    }
+  }
+
+  if (fotmobMatchId) {
+    candidates.push('/match/' + fotmobMatchId + '/odds');
+    candidates.push('/matches/match/' + fotmobMatchId + '/odds');
+  }
+
+  var seen = {};
+  for (var i = 0; i < candidates.length; i++) {
+    var path = candidates[i];
+    if (!path || seen[path]) continue;
+    seen[path] = true;
+
+    try {
+      var pageDetails = tryFotmobPageDetails(path);
+      if (!pageDetails) continue;
+
+      var fromPageOdds = parseFotmobEuropeanOddsOnly(pageDetails);
+      if (fromPageOdds) return fromPageOdds;
+
+      var fromPageProb = parseFotmobProbabilities(pageDetails);
+      if (fromPageProb) return fromPageProb;
+    } catch (err) {
+      // continue
+    }
+  }
+
+  return null;
+}
+
+function resolveWinProbabilityWithOdds(details, fotmobMatchId, footballMatchId, pageUrl, homeName, awayName) {
   var fallback = parseFotmobProbabilities(details);
   var fromDetails = parseFotmobEuropeanOddsOnly(details);
   if (fromDetails) return fromDetails;
@@ -1639,10 +1689,23 @@ function resolveWinProbabilityWithOdds(details, fotmobMatchId, footballMatchId, 
   if (pageUrl) {
     var pageDetails = tryFotmobPageDetails(pageUrl);
     if (pageDetails) {
-      var fromPage = parseFotmobEuropeanOddsOnly(pageDetails);
-      if (fromPage) return fromPage;
+      var fromPageOdds = parseFotmobEuropeanOddsOnly(pageDetails);
+      if (fromPageOdds) return fromPageOdds;
+
+      var fromPageProb = parseFotmobProbabilities(pageDetails);
+      if (fromPageProb) return fromPageProb;
     }
   }
+
+  // FotMob đôi khi không trả odds/probabilities trong matchDetails,
+  // nên thử thêm từ các trang "Odds" khác.
+  var fromAltPages = tryFotmobOddsFromOtherPages(
+    fotmobMatchId,
+    homeName,
+    awayName,
+    pageUrl
+  );
+  if (fromAltPages) return fromAltPages;
 
   var fromFotmobOdds = fetchFotmobMatchOdds(fotmobMatchId);
   if (fromFotmobOdds) return fromFotmobOdds;
@@ -2022,22 +2085,31 @@ function derivePickFromProbabilities(probs) {
   return 'DRAW';
 }
 
-function buildFotmobMatchInfo(details, fotmobMatchId, footballMatchId, pageUrl) {
+function buildFotmobMatchInfo(
+  details,
+  fotmobMatchId,
+  footballMatchId,
+  pageUrl,
+  homeName,
+  awayName
+) {
   var winProbability = resolveWinProbabilityWithOdds(
     details,
     fotmobMatchId,
     footballMatchId,
-    pageUrl
+    pageUrl,
+    homeName,
+    awayName
   );
+  var form = parseFotmobForm(details);
+  var lineup = parseFotmobLineup(details);
+  var fifaRanking = parseFotmobFifaRanking(details);
   var pickSuggestion = derivePickFromProbabilities(winProbability);
   var pickNote = '';
 
   if (winProbability) {
     pickNote = formatProbabilityNote(winProbability);
   }
-
-  var form = parseFotmobForm(details);
-  var lineup = parseFotmobLineup(details);
 
   return {
     fotmobMatchId: String(fotmobMatchId),
@@ -2052,7 +2124,7 @@ function buildFotmobMatchInfo(details, fotmobMatchId, footballMatchId, pageUrl) 
     h2h: parseFotmobH2H(details),
     winProbability: winProbability,
     probabilities: winProbability,
-    fifaRanking: parseFotmobFifaRanking(details),
+    fifaRanking: fifaRanking,
     injuries: parseFotmobInjuries(details),
     marketValue: parseFotmobMarketValue(details),
     goalsStats: parseFotmobGoalsStats(details),
@@ -2094,7 +2166,14 @@ function handleGetFotMobMatchInfo(payload) {
     }
 
     var details = fetchFotmobMatchDetails(ref.id, ref.pageUrl);
-    var fotmob = buildFotmobMatchInfo(details, ref.id, matchId, ref.pageUrl);
+    var fotmob = buildFotmobMatchInfo(
+      details,
+      ref.id,
+      matchId,
+      ref.pageUrl,
+      homeName,
+      awayName
+    );
 
     return {
       success: true,
