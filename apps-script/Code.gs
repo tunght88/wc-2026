@@ -87,6 +87,17 @@ function getFootballApiKey() {
   return PropertiesService.getScriptProperties().getProperty('FOOTBALL_API_KEY') || '';
 }
 
+function getOddsApiIoKey() {
+  return PropertiesService.getScriptProperties().getProperty('ODDS_API_IO_KEY') || '';
+}
+
+function getOddsApiIoBookmakers() {
+  return (
+    PropertiesService.getScriptProperties().getProperty('ODDS_API_IO_BOOKMAKERS') ||
+    'Bet365,Unibet,Betfair'
+  );
+}
+
 function findUserRow(username) {
   var sheet = getUsersSheet();
   var data = sheet.getDataRange().getValues();
@@ -640,6 +651,7 @@ var FOTMOB_WC_LEAGUE_ID = 77;
 var FOTMOB_SITE = 'https://www.fotmob.com';
 var FOTMOB_API_DATA = FOTMOB_SITE + '/api/data';
 var FOTMOB_API_LEGACY = FOTMOB_SITE + '/api';
+var ODDS_API_IO_BASE = 'https://api.odds-api.io/v3';
 
 function fotmobRequestHeaders(acceptType) {
   return {
@@ -675,6 +687,47 @@ function fotmobFetchJson(url, cachePrefix) {
     cache.put(cacheKey, JSON.stringify(data), 300);
     return data;
   } catch (parseErr) {
+    return null;
+  }
+}
+
+function oddsApiIoGet(path, params) {
+  var apiKey = getOddsApiIoKey();
+  if (!apiKey) return null;
+
+  var query = [];
+  var payload = params || {};
+  payload.apiKey = apiKey;
+
+  Object.keys(payload).forEach(function (key) {
+    if (payload[key] === null || payload[key] === undefined || payload[key] === '') return;
+    query.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(payload[key])));
+  });
+
+  var url = ODDS_API_IO_BASE + path + (query.length ? '?' + query.join('&') : '');
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'oio_' + url;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    muteHttpExceptions: true,
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'Mozilla/5.0',
+    },
+  });
+
+  if (response.getResponseCode() !== 200) return null;
+
+  try {
+    var data = JSON.parse(response.getContentText());
+    cache.put(cacheKey, JSON.stringify(data), 120);
+    return data;
+  } catch (err) {
     return null;
   }
 }
@@ -1681,8 +1734,21 @@ function tryFotmobOddsFromOtherPages(fotmobMatchId, homeName, awayName, pageUrl)
   return null;
 }
 
-function resolveWinProbabilityWithOdds(details, fotmobMatchId, footballMatchId, pageUrl, homeName, awayName) {
+function resolveWinProbabilityWithOdds(
+  details,
+  fotmobMatchId,
+  footballMatchId,
+  pageUrl,
+  homeName,
+  awayName,
+  utcDateIso
+) {
   var fallback = parseFotmobProbabilities(details);
+
+  // Priority source: Odds-API.io (explicit odds feed).
+  var fromOddsApiIo = parseOddsApiIoOdds(homeName, awayName, utcDateIso);
+  if (fromOddsApiIo) return fromOddsApiIo;
+
   var fromDetails = parseFotmobEuropeanOddsOnly(details);
   if (fromDetails) return fromDetails;
 
@@ -1710,32 +1776,191 @@ function resolveWinProbabilityWithOdds(details, fotmobMatchId, footballMatchId, 
   var fromFotmobOdds = fetchFotmobMatchOdds(fotmobMatchId);
   if (fromFotmobOdds) return fromFotmobOdds;
 
-  var fromFootballData = parseFootballDataOdds(footballMatchId);
+  var fromFootballData = parseFootballDataOdds(footballMatchId, utcDateIso);
   if (fromFootballData) return fromFootballData;
 
   return fallback;
 }
 
-function parseFootballDataOdds(matchId) {
+function parseFootballDataMatchOdds(match) {
+  if (!match || !match.odds) return null;
+  if (
+    match.odds.homeWin == null ||
+    match.odds.draw == null ||
+    match.odds.awayWin == null
+  ) {
+    return null;
+  }
+
+  return parseEuropeanOddsTriple(
+    match.odds.homeWin,
+    match.odds.draw,
+    match.odds.awayWin,
+    'football-data-odds'
+  );
+}
+
+function toFootballDate(utcDateIso) {
+  if (!utcDateIso) return '';
+  return Utilities.formatDate(new Date(utcDateIso), 'GMT', 'yyyy-MM-dd');
+}
+
+function toRfc3339DayRange(utcDateIso) {
+  var day = toFootballDate(utcDateIso);
+  if (!day) return null;
+  return {
+    from: day + 'T00:00:00Z',
+    to: day + 'T23:59:59Z',
+  };
+}
+
+function getOddsApiEventTeamName(eventObj, side) {
+  if (!eventObj) return '';
+  var value = eventObj[side];
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    return value.name || value.team || value.title || '';
+  }
+  return '';
+}
+
+function resolveOddsApiEventId(homeName, awayName, utcDateIso) {
+  var range = toRfc3339DayRange(utcDateIso);
+  if (!range) return '';
+
+  var events = oddsApiIoGet('/events', {
+    sport: 'football',
+    from: range.from,
+    to: range.to,
+    limit: 200,
+  });
+  if (!events || !events.length) return '';
+
+  for (var i = 0; i < events.length; i++) {
+    var ev = events[i];
+    var home = getOddsApiEventTeamName(ev, 'home');
+    var away = getOddsApiEventTeamName(ev, 'away');
+    if (!home || !away) continue;
+    if (teamsLikelyMatch(home, homeName) && teamsLikelyMatch(away, awayName)) {
+      return String(ev.id || ev.eventId || ev.key || '');
+    }
+  }
+  return '';
+}
+
+function parseOddsApiIoFromOutcomeArray(outcomes) {
+  if (!outcomes || !outcomes.length) return null;
+
+  var mapped = { home: null, draw: null, away: null };
+  for (var i = 0; i < outcomes.length; i++) {
+    var item = outcomes[i] || {};
+    var name = String(item.name || item.label || item.outcome || '').toLowerCase();
+    var price = coerceOddsNumber(item.price || item.odds || item.value);
+    if (price === null) continue;
+
+    if (name === 'home' || name === '1' || name.indexOf('home') !== -1) mapped.home = price;
+    else if (name === 'draw' || name === 'x' || name.indexOf('draw') !== -1) mapped.draw = price;
+    else if (name === 'away' || name === '2' || name.indexOf('away') !== -1) mapped.away = price;
+  }
+
+  if (mapped.home && mapped.draw && mapped.away) {
+    return parseEuropeanOddsTriple(
+      mapped.home,
+      mapped.draw,
+      mapped.away,
+      'odds-api-io'
+    );
+  }
+
+  return null;
+}
+
+function findOddsApiIoInObject(node, depth) {
+  if (!node || depth > 12) return null;
+
+  if (Array.isArray(node)) {
+    var fromOutcomeArray = parseOddsApiIoFromOutcomeArray(node);
+    if (fromOutcomeArray) return fromOutcomeArray;
+    for (var i = 0; i < node.length; i++) {
+      var foundInArray = findOddsApiIoInObject(node[i], depth + 1);
+      if (foundInArray) return foundInArray;
+    }
+    return null;
+  }
+
+  if (typeof node !== 'object') return null;
+
+  var fromDirect = parseEuropeanOddsTriple(
+    node.homeWin || node.homeOdds || node.home,
+    node.draw || node.drawOdds || node.tie,
+    node.awayWin || node.awayOdds || node.away,
+    'odds-api-io'
+  );
+  if (fromDirect) return fromDirect;
+
+  if (node.outcomes && Array.isArray(node.outcomes)) {
+    var fromOutcomes = parseOddsApiIoFromOutcomeArray(node.outcomes);
+    if (fromOutcomes) return fromOutcomes;
+  }
+
+  var keys = Object.keys(node);
+  for (var k = 0; k < keys.length; k++) {
+    var found = findOddsApiIoInObject(node[keys[k]], depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function parseOddsApiIoOdds(homeName, awayName, utcDateIso) {
+  if (!getOddsApiIoKey()) return null;
+
+  var eventId = resolveOddsApiEventId(homeName, awayName, utcDateIso);
+  if (!eventId) return null;
+
+  var odds = oddsApiIoGet('/odds', {
+    eventId: eventId,
+    bookmakers: getOddsApiIoBookmakers(),
+  });
+  if (!odds) return null;
+
+  return findOddsApiIoInObject(odds, 0);
+}
+
+function parseFootballDataOdds(matchId, utcDateIso) {
   if (!matchId || !getFootballApiKey()) return null;
 
   try {
+    // Primary: direct match endpoint.
     var match = footballApiGet('/matches/' + encodeURIComponent(String(matchId)));
-    if (!match || !match.odds) return null;
-    if (
-      match.odds.homeWin == null ||
-      match.odds.draw == null ||
-      match.odds.awayWin == null
-    ) {
-      return null;
+    var fromDirect = parseFootballDataMatchOdds(match);
+    if (fromDirect) return fromDirect;
+
+    // Odds API add-on can expose odds only in list endpoints.
+    var matchesByIds = footballApiGet('/matches?ids=' + encodeURIComponent(String(matchId)));
+    var listByIds = (matchesByIds && matchesByIds.matches) || [];
+    for (var i = 0; i < listByIds.length; i++) {
+      var fromIds = parseFootballDataMatchOdds(listByIds[i]);
+      if (fromIds) return fromIds;
     }
 
-    return parseEuropeanOddsTriple(
-      match.odds.homeWin,
-      match.odds.draw,
-      match.odds.awayWin,
-      'football-data-odds'
-    );
+    // Fallback by competition+date window around kickoff day.
+    var day = toFootballDate(utcDateIso || (match && match.utcDate));
+    if (day) {
+      var byCompDate = footballApiGet(
+        '/competitions/WC/matches?season=2026&dateFrom=' +
+          encodeURIComponent(day) +
+          '&dateTo=' +
+          encodeURIComponent(day)
+      );
+      var listByDate = (byCompDate && byCompDate.matches) || [];
+      for (var j = 0; j < listByDate.length; j++) {
+        if (String(listByDate[j].id) !== String(matchId)) continue;
+        var fromDate = parseFootballDataMatchOdds(listByDate[j]);
+        if (fromDate) return fromDate;
+      }
+    }
+
+    return null;
   } catch (err) {
     return null;
   }
@@ -2091,7 +2316,8 @@ function buildFotmobMatchInfo(
   footballMatchId,
   pageUrl,
   homeName,
-  awayName
+  awayName,
+  utcDateIso
 ) {
   var winProbability = resolveWinProbabilityWithOdds(
     details,
@@ -2099,7 +2325,8 @@ function buildFotmobMatchInfo(
     footballMatchId,
     pageUrl,
     homeName,
-    awayName
+    awayName,
+    utcDateIso
   );
   var form = parseFotmobForm(details);
   var lineup = parseFotmobLineup(details);
@@ -2172,7 +2399,8 @@ function handleGetFotMobMatchInfo(payload) {
       matchId,
       ref.pageUrl,
       homeName,
-      awayName
+      awayName,
+      utcDate
     );
 
     return {
