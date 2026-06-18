@@ -496,13 +496,45 @@
     );
   }
 
-  function renderPlayerPickChart(stats, match) {
-    if (!stats || !stats.total) {
-      return '<p class="match-info-empty">Chưa có người chơi nào chọn trận này</p>';
+  function renderMissingPredictionsList(stats) {
+    const missing = (stats && stats.notPredicted) || [];
+    if (!missing.length) {
+      return '<p class="match-info-empty">Tất cả người chơi đã dự đoán trận này</p>';
     }
 
+    const names = missing
+      .map(function (user) {
+        return escapeHtml(user.fullName || user.username);
+      })
+      .join(', ');
+
+    const expectedTotal = stats.expectedTotal || missing.length + (stats.total || 0);
+
+    return (
+      '<div class="missing-predictions-list">' +
+        '<p class="missing-predictions-summary">' +
+          escapeHtml(String(missing.length) + '/' + expectedTotal + ' người chưa dự đoán') +
+        '</p>' +
+        '<p class="missing-predictions-names">' + names + '</p>' +
+      '</div>'
+    );
+  }
+
+  function renderPlayerPickChart(stats, match) {
     const homeName = match.homeTeam.shortName || match.homeTeam.name;
     const awayName = match.awayTeam.shortName || match.awayTeam.name;
+    const missingHtml = renderMissingPredictionsList(stats);
+
+    if (!stats || !stats.total) {
+      return (
+        '<p class="match-info-empty">Chưa có người chơi nào chọn trận này</p>' +
+        '<div class="match-info-subsection">' +
+          '<h4 class="match-info-subtitle">Người chưa dự đoán</h4>' +
+          missingHtml +
+        '</div>'
+      );
+    }
+
     const pieStyle = 'background:' + buildPlayerPickPieGradient(stats);
 
     return (
@@ -531,6 +563,10 @@
             '<span class="player-pick-legend-value">' + stats.away + ' (' + stats.awayPct + '%)</span>' +
           '</li>' +
         '</ul>' +
+      '</div>' +
+      '<div class="match-info-subsection">' +
+        '<h4 class="match-info-subtitle">Người chưa dự đoán</h4>' +
+        missingHtml +
       '</div>'
     );
   }

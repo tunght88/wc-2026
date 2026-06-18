@@ -66,6 +66,27 @@
     <section class="admin-section">
       <div class="wc-card">
         <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+          <h2 class="wc-card-title mb-0 border-0 pb-0">Đồng bộ trận đấu</h2>
+          <button type="button" id="sync-matches-btn" class="btn btn-primary btn-sm">Đồng bộ về Sheets</button>
+        </div>
+        <p class="text-sm text-gray-600 mb-2">
+          Tự động đồng bộ mỗi giờ (khi có người xem lịch hoặc trigger nền). Nút bên cạnh để đồng bộ thủ công ngay.
+        </p>
+        <p id="sync-matches-status" class="text-sm text-gray-500"></p>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <div class="wc-card">
+        <h2 class="wc-card-title">Người chưa dự đoán theo trận</h2>
+        <p class="text-sm text-gray-600 mb-4">Chỉ hiển thị các trận chưa kết thúc còn thiếu dự đoán.</p>
+        <div id="missing-predictions-table"></div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <div class="wc-card">
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
           <h2 class="wc-card-title mb-0 border-0 pb-0">Toàn bộ dự đoán</h2>
           <button type="button" id="export-csv-btn" class="btn btn-secondary btn-sm">Xuất CSV</button>
         </div>

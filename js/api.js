@@ -141,3 +141,21 @@ async function getMatchPredictionStats(username, passwordHash, matchId) {
     matchId,
   });
 }
+
+async function syncMatches(adminUsername, adminPasswordHash, competition, season) {
+  return postAction('syncMatches', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    competition,
+    season,
+  });
+}
+
+async function getMissingPredictions(adminUsername, adminPasswordHash, competition, season) {
+  return postAction('getMissingPredictions', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    competition,
+    season,
+  });
+}

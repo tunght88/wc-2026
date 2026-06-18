@@ -11,9 +11,12 @@
 
   const usersTable = document.getElementById('users-table');
   const predictionsTable = document.getElementById('predictions-table');
+  const missingPredictionsTable = document.getElementById('missing-predictions-table');
   const errorBanner = document.getElementById('error-banner');
   const createUserForm = document.getElementById('create-user-form');
   const exportCsvBtn = document.getElementById('export-csv-btn');
+  const syncMatchesBtn = document.getElementById('sync-matches-btn');
+  const syncMatchesStatus = document.getElementById('sync-matches-status');
 
   function renderUsersTable() {
     if (allUsers.length === 0) {
@@ -106,6 +109,79 @@
 
     html += '</tbody></table></div>';
     predictionsTable.innerHTML = html;
+  }
+
+  function renderMissingPredictionsTable(items) {
+    if (!items || items.length === 0) {
+      missingPredictionsTable.innerHTML =
+        '<p class="text-gray-500 text-sm">Tất cả người chơi đã dự đoán các trận sắp tới</p>';
+      return;
+    }
+
+    let html =
+      '<div class="table-wrapper">' +
+        '<table class="data-table">' +
+          '<thead><tr>' +
+            '<th>Trận đấu</th>' +
+            '<th>Thời gian</th>' +
+            '<th>Đã dự đoán</th>' +
+            '<th>Chưa dự đoán</th>' +
+          '</tr></thead><tbody>';
+
+    items.forEach(function (item) {
+      const matchLabel = item.homeTeam + ' vs ' + item.awayTeam;
+      const missingNames = (item.missing || [])
+        .map(function (user) {
+          return user.fullName || user.username;
+        })
+        .join(', ');
+
+      html +=
+        '<tr>' +
+          '<td>' + escapeHtml(matchLabel) + '</td>' +
+          '<td>' + escapeHtml(formatDateTime(item.utcDate)) + '</td>' +
+          '<td>' + escapeHtml(String(item.predictedCount) + '/' + item.expectedCount) + '</td>' +
+          '<td class="missing-predictions-cell">' + escapeHtml(missingNames) + '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    missingPredictionsTable.innerHTML = html;
+  }
+
+  async function handleSyncMatches() {
+    syncMatchesBtn.disabled = true;
+    syncMatchesBtn.textContent = 'Đang đồng bộ...';
+    syncMatchesStatus.textContent = '';
+
+    try {
+      const result = await syncMatches(
+        session.username,
+        session.passwordHash,
+        WC_COMPETITION_CODE,
+        WC_SEASON
+      );
+      const sync = result.sync || {};
+      syncMatchesStatus.textContent =
+        'Đã đồng bộ ' + (sync.total || 0) + ' trận (' +
+        (sync.added || 0) + ' mới, ' + (sync.updated || 0) + ' cập nhật).';
+      showToast('Đồng bộ trận đấu thành công', 'success');
+    } catch (err) {
+      showToast(err.message || 'Đồng bộ thất bại', 'error');
+    } finally {
+      syncMatchesBtn.disabled = false;
+      syncMatchesBtn.textContent = 'Đồng bộ về Sheets';
+    }
+  }
+
+  async function loadMissingPredictions() {
+    const result = await getMissingPredictions(
+      session.username,
+      session.passwordHash,
+      WC_COMPETITION_CODE,
+      WC_SEASON
+    );
+    renderMissingPredictionsTable(result.items || []);
   }
 
   function formatDateTime(iso) {
@@ -246,7 +322,7 @@
         matchMap[String(m.id)] = m;
       });
 
-      await Promise.all([loadUsers(), loadPredictions()]);
+      await Promise.all([loadUsers(), loadPredictions(), loadMissingPredictions()]);
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải dữ liệu admin';
       errorBanner.classList.remove('hidden');
@@ -257,5 +333,6 @@
 
   createUserForm.addEventListener('submit', handleCreateUser);
   exportCsvBtn.addEventListener('click', exportCsv);
+  syncMatchesBtn.addEventListener('click', handleSyncMatches);
   init();
 })();

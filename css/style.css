@@ -1093,6 +1093,43 @@ body.modal-open {
   white-space: nowrap;
 }
 
+.missing-predictions-cell {
+  max-width: 28rem;
+  white-space: normal;
+  color: #b45309;
+  font-size: 0.875rem;
+}
+
+.missing-predictions-list {
+  margin-top: 0.5rem;
+}
+
+.missing-predictions-summary {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #b45309;
+  margin-bottom: 0.35rem;
+}
+
+.missing-predictions-names {
+  font-size: 0.875rem;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.match-info-subsection {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.match-info-subtitle {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
 .lineup-formation {
   font-weight: 500;
   color: #6b7280;

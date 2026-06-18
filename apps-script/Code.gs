@@ -2,6 +2,9 @@ const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE';
 const USERS_SHEET = 'Users';
 const PREDICTIONS_SHEET = 'Predictions';
 const MATCH_INSIGHTS_SHEET = 'MatchInsights';
+const MATCHES_SHEET = 'Matches';
+const DEFAULT_COMPETITION = 'WC';
+const DEFAULT_SEASON = '2026';
 
 function doGet(e) {
   return handleRequest(e);
@@ -55,6 +58,10 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleGetFotMobMatchInfo(payload)));
       case 'getMatchPredictionStats':
         return corsResponse(JSON.stringify(handleGetMatchPredictionStats(payload)));
+      case 'syncMatches':
+        return corsResponse(JSON.stringify(handleSyncMatches(payload)));
+      case 'getMissingPredictions':
+        return corsResponse(JSON.stringify(handleGetMissingPredictions(payload)));
       default:
         return corsResponse(JSON.stringify({ success: false, message: 'Action không hợp lệ' }));
     }
@@ -81,6 +88,249 @@ function getPredictionsSheet() {
 
 function getMatchInsightsSheet() {
   return getSpreadsheet().getSheetByName(MATCH_INSIGHTS_SHEET);
+}
+
+function getMatchesSheet() {
+  return ensureMatchesSheet();
+}
+
+function ensureMatchesSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(MATCHES_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(MATCHES_SHEET);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet
+      .getRange(1, 1, 1, 11)
+      .setValues([
+        [
+          'match_id',
+          'utc_date',
+          'home_team',
+          'away_team',
+          'stage',
+          'group',
+          'status',
+          'home_score',
+          'away_score',
+          'result',
+          'synced_at',
+        ],
+      ])
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
+}
+
+function mapWinnerToResult(winner) {
+  var w = String(winner || '').toUpperCase();
+  if (w === 'HOME_TEAM' || w === 'HOME') return 'HOME';
+  if (w === 'AWAY_TEAM' || w === 'AWAY') return 'AWAY';
+  if (w === 'DRAW') return 'DRAW';
+  return '';
+}
+
+function getScoreGoalsFromApi(scorePart) {
+  if (!scorePart) return { home: null, away: null };
+  var home = scorePart.home;
+  var away = scorePart.away;
+  if (home === undefined || home === null) home = scorePart.homeTeam;
+  if (away === undefined || away === null) away = scorePart.awayTeam;
+  return { home: home, away: away };
+}
+
+function deriveMatchResultFromApi(match) {
+  if (!match || !match.score || match.status !== 'FINISHED') return '';
+
+  var score = match.score;
+  var fromWinner = mapWinnerToResult(score.winner);
+  if (fromWinner) return fromWinner;
+
+  var fullTime = getScoreGoalsFromApi(score.fullTime);
+  var home = fullTime.home;
+  var away = fullTime.away;
+
+  if (score.penalties) {
+    var pen = getScoreGoalsFromApi(score.penalties);
+    if (pen.home !== null && pen.away !== null && pen.home !== pen.away) {
+      return pen.home > pen.away ? 'HOME' : 'AWAY';
+    }
+  }
+
+  if (score.extraTime) {
+    var extra = getScoreGoalsFromApi(score.extraTime);
+    if (extra.home !== null && extra.away !== null) {
+      home = extra.home;
+      away = extra.away;
+    }
+  }
+
+  if (home === null || home === undefined || away === null || away === undefined) {
+    return '';
+  }
+  if (home > away) return 'HOME';
+  if (away > home) return 'AWAY';
+  return 'DRAW';
+}
+
+function buildMatchSheetRow(match) {
+  var homeScore = '';
+  var awayScore = '';
+  if (match.score && match.score.fullTime) {
+    var ft = getScoreGoalsFromApi(match.score.fullTime);
+    if (ft.home !== null && ft.home !== undefined) homeScore = ft.home;
+    if (ft.away !== null && ft.away !== undefined) awayScore = ft.away;
+  }
+
+  var group = '';
+  if (match.group) {
+    group = String(match.group).replace('GROUP_', '');
+  }
+
+  return [
+    String(match.id),
+    match.utcDate || '',
+    match.homeTeam ? String(match.homeTeam.shortName || match.homeTeam.name || '') : '',
+    match.awayTeam ? String(match.awayTeam.shortName || match.awayTeam.name || '') : '',
+    match.stage || '',
+    group,
+    match.status || '',
+    homeScore,
+    awayScore,
+    deriveMatchResultFromApi(match),
+    new Date().toISOString(),
+  ];
+}
+
+function syncMatchesToSheet(competition, season) {
+  var data = footballApiGet(
+    '/competitions/' + competition + '/matches?season=' + season
+  );
+  var matches = data.matches || [];
+  var sheet = ensureMatchesSheet();
+  var existing = sheet.getDataRange().getValues();
+  var rowMap = {};
+
+  for (var i = 1; i < existing.length; i++) {
+    if (existing[i][0]) {
+      rowMap[String(existing[i][0])] = i + 1;
+    }
+  }
+
+  var updated = 0;
+  var added = 0;
+
+  matches.forEach(function (match) {
+    var row = buildMatchSheetRow(match);
+    var matchId = String(match.id);
+    if (rowMap[matchId]) {
+      sheet.getRange(rowMap[matchId], 1, 1, row.length).setValues([row]);
+      updated++;
+    } else {
+      sheet.appendRow(row);
+      rowMap[matchId] = sheet.getLastRow();
+      added++;
+    }
+  });
+
+  return {
+    total: matches.length,
+    updated: updated,
+    added: added,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+function handleSyncMatches(payload) {
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var competition = String(payload.competition || DEFAULT_COMPETITION);
+  var season = String(payload.season || DEFAULT_SEASON);
+
+  try {
+    var result = syncMatchesToSheet(competition, season);
+    setLastMatchSyncTime();
+    ensureMatchSyncTrigger();
+    return { success: true, sync: result };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+function getLastMatchSyncTime() {
+  var value = PropertiesService.getScriptProperties().getProperty('MATCHES_LAST_SYNC');
+  return value ? parseInt(value, 10) : 0;
+}
+
+function setLastMatchSyncTime() {
+  PropertiesService.getScriptProperties().setProperty('MATCHES_LAST_SYNC', String(Date.now()));
+}
+
+function maybeAutoSyncMatches() {
+  var intervalMs = 60 * 60 * 1000;
+  if (Date.now() - getLastMatchSyncTime() < intervalMs) {
+    return null;
+  }
+
+  try {
+    var result = syncMatchesToSheet(DEFAULT_COMPETITION, DEFAULT_SEASON);
+    setLastMatchSyncTime();
+    ensureMatchSyncTrigger();
+    return result;
+  } catch (err) {
+    Logger.log('maybeAutoSyncMatches failed: ' + (err.message || err));
+    return null;
+  }
+}
+
+function scheduledSyncMatches() {
+  try {
+    syncMatchesToSheet(DEFAULT_COMPETITION, DEFAULT_SEASON);
+    setLastMatchSyncTime();
+  } catch (err) {
+    Logger.log('scheduledSyncMatches failed: ' + (err.message || err));
+  }
+}
+
+function hasMatchSyncTrigger() {
+  return ScriptApp.getProjectTriggers().some(function (trigger) {
+    return trigger.getHandlerFunction() === 'scheduledSyncMatches';
+  });
+}
+
+function ensureMatchSyncTrigger() {
+  if (hasMatchSyncTrigger()) {
+    return false;
+  }
+
+  ScriptApp.newTrigger('scheduledSyncMatches').timeBased().everyHours(1).create();
+  return true;
+}
+
+function setupMatchSyncTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === 'scheduledSyncMatches') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger('scheduledSyncMatches').timeBased().everyHours(1).create();
+  return 'Đã tạo trigger đồng bộ trận đấu mỗi 1 giờ';
+}
+
+function onOpen() {
+  try {
+    maybeAutoSyncMatches();
+  } catch (err) {
+    Logger.log('onOpen auto sync failed: ' + (err.message || err));
+  }
 }
 
 function getFootballApiKey() {
@@ -249,6 +499,7 @@ function handleGetFootballMatches(payload) {
   var season = String(payload.season || '2026');
 
   try {
+    maybeAutoSyncMatches();
     var data = footballApiGet('/competitions/' + competition + '/matches?season=' + season);
     return { success: true, matches: data.matches || [] };
   } catch (err) {
@@ -469,16 +720,58 @@ function handleGetPredictions(payload) {
   return { success: true, predictions: predictions, activeUsers: activeUsers };
 }
 
-function getActivePlayerUsernames() {
+function getActivePlayers() {
   var usersData = getUsersSheet().getDataRange().getValues();
-  var players = {};
+  var players = [];
+
   for (var i = 1; i < usersData.length; i++) {
     if (!usersData[i][0]) continue;
     if (String(usersData[i][4]).toUpperCase() !== 'TRUE') continue;
     if (String(usersData[i][3]).toUpperCase() === 'ADMIN') continue;
-    players[String(usersData[i][0])] = true;
+    players.push({
+      username: String(usersData[i][0]),
+      fullName: String(usersData[i][2]),
+    });
   }
+
   return players;
+}
+
+function getActivePlayerUsernames() {
+  var players = getActivePlayers();
+  var map = {};
+  players.forEach(function (player) {
+    map[player.username] = true;
+  });
+  return map;
+}
+
+function buildPredictionMapByMatch() {
+  var sheet = getPredictionsSheet();
+  var data = sheet.getDataRange().getValues();
+  var map = {};
+
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0] || !data[i][1]) continue;
+    var matchId = String(data[i][1]);
+    if (!map[matchId]) map[matchId] = {};
+    map[matchId][String(data[i][0])] = String(data[i][2]).toUpperCase();
+  }
+
+  return map;
+}
+
+function getMissingPlayersForMatch(matchId, players, predictionMap) {
+  var predicted = predictionMap[String(matchId)] || {};
+  var missing = [];
+
+  players.forEach(function (player) {
+    if (!predicted[player.username]) {
+      missing.push(player);
+    }
+  });
+
+  return missing;
 }
 
 function handleGetMatchPredictionStats(payload) {
@@ -492,14 +785,16 @@ function handleGetMatchPredictionStats(payload) {
     return { success: false, message: 'Thiếu matchId' };
   }
 
-  var players = getActivePlayerUsernames();
+  var players = getActivePlayers();
+  var playerSet = getActivePlayerUsernames();
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var counts = { home: 0, draw: 0, away: 0, total: 0 };
+  var predictedUsers = {};
 
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0] || String(data[i][1]) !== matchId) continue;
-    if (!players[String(data[i][0])]) continue;
+    if (!playerSet[String(data[i][0])]) continue;
 
     var prediction = String(data[i][2]).toUpperCase();
     if (prediction === 'HOME') counts.home++;
@@ -508,7 +803,12 @@ function handleGetMatchPredictionStats(payload) {
     else continue;
 
     counts.total++;
+    predictedUsers[String(data[i][0])] = true;
   }
+
+  var notPredicted = players.filter(function (player) {
+    return !predictedUsers[player.username];
+  });
 
   var total = counts.total;
   return {
@@ -518,11 +818,67 @@ function handleGetMatchPredictionStats(payload) {
       draw: counts.draw,
       away: counts.away,
       total: total,
+      expectedTotal: players.length,
       homePct: total ? Math.round((counts.home / total) * 100) : 0,
       drawPct: total ? Math.round((counts.draw / total) * 100) : 0,
       awayPct: total ? Math.round((counts.away / total) * 100) : 0,
+      notPredicted: notPredicted,
     },
   };
+}
+
+function handleGetMissingPredictions(payload) {
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var competition = String(payload.competition || DEFAULT_COMPETITION);
+  var season = String(payload.season || DEFAULT_SEASON);
+  var onlyUpcoming = String(payload.onlyUpcoming || 'true').toLowerCase() !== 'false';
+
+  try {
+    var data = footballApiGet(
+      '/competitions/' + competition + '/matches?season=' + season
+    );
+    var matches = data.matches || [];
+    var players = getActivePlayers();
+    var predictionMap = buildPredictionMapByMatch();
+    var items = [];
+
+    matches.forEach(function (match) {
+      var status = String(match.status || '');
+      if (onlyUpcoming && status === 'FINISHED') return;
+
+      var matchId = String(match.id);
+      var missing = getMissingPlayersForMatch(matchId, players, predictionMap);
+      if (missing.length === 0) return;
+
+      items.push({
+        matchId: matchId,
+        utcDate: match.utcDate || '',
+        homeTeam: match.homeTeam
+          ? String(match.homeTeam.shortName || match.homeTeam.name || '')
+          : '',
+        awayTeam: match.awayTeam
+          ? String(match.awayTeam.shortName || match.awayTeam.name || '')
+          : '',
+        stage: match.stage || '',
+        status: status,
+        predictedCount: players.length - missing.length,
+        expectedCount: players.length,
+        missing: missing,
+      });
+    });
+
+    items.sort(function (a, b) {
+      return new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime();
+    });
+
+    return { success: true, items: items };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
 }
 
 function handleGetUsers(payload) {
