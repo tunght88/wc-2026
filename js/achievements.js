@@ -1,7 +1,11 @@
 const ACHIEVEMENT_DEFS = {
   oracle: { id: 'oracle', label: 'Oracle', title: 'Dự đoán đúng trận chung kết' },
   'perfect-day': { id: 'perfect-day', label: 'Perfect Day', title: 'Dự đoán đúng hết trong ngày (12h–12h)' },
-  contrarian: { id: 'contrarian', label: 'Ngược đám đông', title: 'Dự đoán thiểu số và đúng' },
+  contrarian: {
+    id: 'contrarian',
+    label: 'Ngược đám đông',
+    title: 'Chọn kết quả thiểu số ở trận hôm nay hoặc hôm qua (12h–12h)',
+  },
   'knockout-king': { id: 'knockout-king', label: 'Vua knock-out', title: 'Nhiều dự đoán đúng nhất ở vòng knock-out' },
 };
 
@@ -98,25 +102,13 @@ function hasContrarianBadge(username, predictions, matches, activePlayers) {
   const predMap = buildPredictionMap(predictions);
 
   return matches.some(function (match) {
-    if (match.status !== 'FINISHED') return false;
-    const actual = getActualResult(match);
-    if (!actual) return false;
+    if (!isInTodayOrYesterdayNoonDay(match.utcDate)) return false;
 
     const userPrediction = predMap[username] && predMap[username][String(match.id)];
-    if (!userPrediction || userPrediction !== actual) return false;
+    if (!userPrediction) return false;
 
-    const counts = { HOME: 0, DRAW: 0, AWAY: 0, total: 0 };
-    players.forEach(function (player) {
-      const pick = predMap[player.username] && predMap[player.username][String(match.id)];
-      if (!pick) return;
-      counts[pick]++;
-      counts.total++;
-    });
-
-    if (!counts.total) return false;
-    const userCount = counts[userPrediction];
-    const majorityThreshold = Math.ceil(counts.total / 2);
-    return userCount < majorityThreshold;
+    const counts = buildMatchPickCounts(match.id, predMap, players);
+    return isMinorityPick(counts, userPrediction);
   });
 }
 

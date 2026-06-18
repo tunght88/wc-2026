@@ -574,16 +574,16 @@
     let className = 'pick-name';
     let badge = '';
 
-    if (match.status === 'FINISHED' && actual) {
-      if (player.prediction === actual) {
-        className += ' pick-name-correct';
-      }
-      const majorityThreshold = Math.ceil((counts && counts.total) ? counts.total / 2 : 1);
-      const pickCount = counts ? counts[player.prediction] : 0;
-      if (player.prediction === actual && pickCount < majorityThreshold) {
-        className += ' pick-name-contrarian';
-        badge = ' <span class="pick-contrarian-badge">Ngược đám đông</span>';
-      }
+    if (match.status === 'FINISHED' && actual && player.prediction === actual) {
+      className += ' pick-name-correct';
+    }
+
+    if (
+      isInTodayOrYesterdayNoonDay(match.utcDate) &&
+      isMinorityPick(counts, player.prediction)
+    ) {
+      className += ' pick-name-contrarian';
+      badge = ' <span class="pick-contrarian-badge">Ngược đám đông</span>';
     }
 
     return (

@@ -526,6 +526,41 @@ function isInNoonDay(utcDate, now) {
   return kickoff >= window.start.getTime() && kickoff < window.end.getTime();
 }
 
+function getYesterdayNoonDayWindow(now) {
+  const todayStart = getNoonDayWindow(now).start;
+  const start = new Date(todayStart);
+  start.setDate(start.getDate() - 1);
+  return { start: start, end: new Date(todayStart) };
+}
+
+function isInTodayOrYesterdayNoonDay(utcDate, now) {
+  if (isInNoonDay(utcDate, now)) return true;
+  const yesterday = getYesterdayNoonDayWindow(now);
+  const kickoff = new Date(utcDate).getTime();
+  if (isNaN(kickoff)) return false;
+  return kickoff >= yesterday.start.getTime() && kickoff < yesterday.end.getTime();
+}
+
+function buildMatchPickCounts(matchId, predMap, players) {
+  const counts = { HOME: 0, DRAW: 0, AWAY: 0, total: 0 };
+  (players || []).forEach(function (player) {
+    const pick = predMap[player.username] && predMap[player.username][String(matchId)];
+    if (!pick) return;
+    const normalized = String(pick).toUpperCase();
+    if (normalized !== 'HOME' && normalized !== 'DRAW' && normalized !== 'AWAY') return;
+    counts[normalized]++;
+    counts.total++;
+  });
+  return counts;
+}
+
+function isMinorityPick(counts, prediction) {
+  if (!counts || !counts.total || !prediction) return false;
+  const pick = String(prediction).toUpperCase();
+  const majorityThreshold = Math.ceil(counts.total / 2);
+  return counts[pick] < majorityThreshold;
+}
+
 function formatNoonDayLabel(date) {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 }
