@@ -555,10 +555,12 @@ function buildMatchPickCounts(matchId, predMap, players) {
 }
 
 function isMinorityPick(counts, prediction) {
-  if (!counts || !counts.total || !prediction) return false;
+  if (!counts || counts.total < 2 || !prediction) return false;
   const pick = String(prediction).toUpperCase();
-  const majorityThreshold = Math.ceil(counts.total / 2);
-  return counts[pick] < majorityThreshold;
+  if (!counts[pick]) return false;
+
+  const maxCount = Math.max(counts.HOME, counts.DRAW, counts.AWAY);
+  return counts[pick] < maxCount;
 }
 
 function formatNoonDayLabel(date) {

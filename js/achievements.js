@@ -4,7 +4,7 @@ const ACHIEVEMENT_DEFS = {
   contrarian: {
     id: 'contrarian',
     label: 'Ngược đám đông',
-    title: 'Chọn kết quả thiểu số ở trận hôm nay hoặc hôm qua (12h–12h)',
+    title: 'Dự đoán đúng kết quả không được nhiều người chọn (hôm nay + hôm qua, 12h–12h)',
   },
   'knockout-king': { id: 'knockout-king', label: 'Vua knock-out', title: 'Nhiều dự đoán đúng nhất ở vòng knock-out' },
 };
@@ -103,9 +103,13 @@ function hasContrarianBadge(username, predictions, matches, activePlayers) {
 
   return matches.some(function (match) {
     if (!isInTodayOrYesterdayNoonDay(match.utcDate)) return false;
+    if (match.status !== 'FINISHED') return false;
+
+    const actual = getActualResult(match);
+    if (!actual) return false;
 
     const userPrediction = predMap[username] && predMap[username][String(match.id)];
-    if (!userPrediction) return false;
+    if (!userPrediction || userPrediction !== actual) return false;
 
     const counts = buildMatchPickCounts(match.id, predMap, players);
     return isMinorityPick(counts, userPrediction);

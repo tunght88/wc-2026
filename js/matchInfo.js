@@ -580,6 +580,9 @@
 
     if (
       isInTodayOrYesterdayNoonDay(match.utcDate) &&
+      match.status === 'FINISHED' &&
+      actual &&
+      player.prediction === actual &&
       isMinorityPick(counts, player.prediction)
     ) {
       className += ' pick-name-contrarian';
