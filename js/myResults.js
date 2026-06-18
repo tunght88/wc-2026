@@ -4,9 +4,41 @@
 
   renderNav('my-results');
 
+  const achievementsContainer = document.getElementById('achievements-container');
   const resultsContainer = document.getElementById('results-container');
   const statsContainer = document.getElementById('stats-container');
   const errorBanner = document.getElementById('error-banner');
+
+  function renderAchievementsPanel(achievements) {
+    let perfectDaysHtml = '';
+    if (achievements.perfectDays.length) {
+      const labels = achievements.perfectDays.map(function (day) {
+        return day.label + ' (' + day.count + ' trận)';
+      }).join(', ');
+      perfectDaysHtml =
+        '<p class="achievement-perfect-days">' +
+          '<strong>Perfect Day:</strong> ' + escapeHtml(labels) +
+        '</p>';
+    }
+
+    achievementsContainer.innerHTML =
+      '<div class="achievement-panel wc-card">' +
+        '<h2 class="wc-card-title">Thành tích</h2>' +
+        '<div class="achievement-panel-body">' +
+          '<div class="achievement-streak">' +
+            '<span class="achievement-streak-value">' + achievements.streak + '</span>' +
+            '<span class="achievement-streak-label">Chuỗi đúng hiện tại</span>' +
+          '</div>' +
+          (achievements.badges.length
+            ? '<div class="achievement-panel-badges">' + renderAchievementBadges(achievements.badges, 10) + '</div>'
+            : '<p class="text-gray-500 text-sm">Chưa có huy hiệu nào</p>') +
+          perfectDaysHtml +
+          (achievements.knockoutCorrect > 0
+            ? '<p class="achievement-knockout">Knock-out đúng: <strong>' + achievements.knockoutCorrect + '</strong></p>'
+            : '') +
+        '</div>' +
+      '</div>';
+  }
 
   function renderStats(stats) {
     statsContainer.innerHTML =
@@ -73,9 +105,19 @@
         matchMap[String(m.id)] = m;
       });
 
-      const myPreds = (predResult.predictions || []).filter(function (p) {
+      const predictions = predResult.predictions || [];
+      const players = getActivePlayers(predResult.activeUsers || []);
+      const myPreds = predictions.filter(function (p) {
         return p.username === session.username;
       });
+
+      const achievements = computeUserAchievements(
+        session.username,
+        predictions,
+        matches,
+        players
+      );
+      renderAchievementsPanel(achievements);
 
       const stats = { total: myPreds.length, finished: 0, correct: 0, wrong: 0, missed: 0, penalties: 0 };
       const rows = [];
@@ -147,6 +189,10 @@
 
       renderStats(stats);
       renderResults(rows);
+      initReminderBanner(session, {
+        matches: matches,
+        userPredMap: myPredMap,
+      });
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải dữ liệu';
       errorBanner.classList.remove('hidden');

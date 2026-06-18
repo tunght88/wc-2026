@@ -487,3 +487,182 @@ function getPredictionResultStatus(match, prediction) {
   if (!actual) return 'pending';
   return prediction === actual ? 'correct' : 'wrong';
 }
+
+const KNOCKOUT_STAGES = [
+  'LAST_32',
+  'ROUND_OF_32',
+  'LAST_16',
+  'ROUND_OF_16',
+  'QUARTER_FINALS',
+  'SEMI_FINALS',
+  'THIRD_PLACE',
+  'FINAL',
+];
+
+function isKnockoutStage(stage) {
+  return KNOCKOUT_STAGES.indexOf(stage) !== -1;
+}
+
+function getNoonDayWindow(now) {
+  const ref = now ? new Date(now) : new Date();
+  const noon = new Date(ref);
+  noon.setHours(12, 0, 0, 0);
+
+  let start = noon;
+  if (ref.getTime() < noon.getTime()) {
+    start = new Date(noon);
+    start.setDate(start.getDate() - 1);
+  }
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start: start, end: end };
+}
+
+function isInNoonDay(utcDate, now) {
+  const kickoff = new Date(utcDate).getTime();
+  if (isNaN(kickoff)) return false;
+  const window = getNoonDayWindow(now);
+  return kickoff >= window.start.getTime() && kickoff < window.end.getTime();
+}
+
+function formatNoonDayLabel(date) {
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+}
+
+function buildUserPredictionMap(predictions, username) {
+  const map = {};
+  (predictions || []).forEach(function (p) {
+    if (p.username === username) {
+      map[String(p.matchId)] = p.prediction;
+    }
+  });
+  return map;
+}
+
+function isMatchOpenForPrediction(match) {
+  return match.status !== 'FINISHED' && !isMatchLocked(match.utcDate);
+}
+
+function getUpcomingUnpredicted(matches, userPredMap, hours) {
+  const now = Date.now();
+  const limit = now + hours * 60 * 60 * 1000;
+
+  return sortMatchesByDate(
+    matches.filter(function (m) {
+      if (!isMatchOpenForPrediction(m)) return false;
+      if (userPredMap[String(m.id)]) return false;
+      const kickoff = new Date(m.utcDate).getTime();
+      return kickoff > now && kickoff <= limit;
+    })
+  );
+}
+
+function getTodayUnpredicted(matches, userPredMap, now) {
+  return sortMatchesByDate(
+    matches.filter(function (m) {
+      if (!isMatchOpenForPrediction(m)) return false;
+      if (userPredMap[String(m.id)]) return false;
+      return isInNoonDay(m.utcDate, now);
+    })
+  );
+}
+
+function formatLockCountdown(utcDate) {
+  if (isMatchLocked(utcDate)) return '';
+  const diff = new Date(utcDate).getTime() - Date.now();
+  if (diff <= 0) return '';
+
+  const totalMinutes = Math.floor(diff / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0) {
+    return 'Còn ' + hours + 'h ' + minutes + 'p để dự đoán';
+  }
+  if (minutes > 0) {
+    return 'Còn ' + minutes + 'p để dự đoán';
+  }
+  return 'Còn dưới 1p để dự đoán';
+}
+
+function formatKickoffCountdown(utcDate) {
+  const diff = new Date(utcDate).getTime() - Date.now();
+  if (diff <= 0) return 'Đã bắt đầu';
+
+  const totalMinutes = Math.floor(diff / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const days = Math.floor(hours / 24);
+  const remainHours = hours % 24;
+
+  if (days > 0) {
+    return days + ' ngày ' + remainHours + 'h ' + minutes + 'p';
+  }
+  if (hours > 0) {
+    return hours + 'h ' + minutes + 'p';
+  }
+  if (minutes > 0) {
+    return minutes + ' phút';
+  }
+  return 'Dưới 1 phút';
+}
+
+function getNextUpcomingMatch(matches) {
+  const now = Date.now();
+  const upcoming = matches
+    .filter(function (m) {
+      return m.status !== 'FINISHED' && new Date(m.utcDate).getTime() > now;
+    })
+    .sort(function (a, b) {
+      return new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime();
+    });
+  return upcoming[0] || null;
+}
+
+function getUserLeaderboardRank(rows, username) {
+  const index = rows.findIndex(function (row) {
+    return row.username === username;
+  });
+  if (index === -1) {
+    return { rank: null, row: null };
+  }
+  return { rank: index + 1, row: rows[index] };
+}
+
+function updateCountdownElements(selector) {
+  document.querySelectorAll(selector || '.badge-countdown[data-kickoff]').forEach(function (el) {
+    const kickoff = el.dataset.kickoff;
+    const text = formatLockCountdown(kickoff);
+    if (!text) {
+      el.textContent = 'Đã khóa dự đoán';
+      el.classList.remove('badge-countdown');
+      el.classList.add('badge-locked');
+      return;
+    }
+    el.textContent = text;
+  });
+
+  document.querySelectorAll('.kickoff-countdown[data-kickoff]').forEach(function (el) {
+    el.textContent = formatKickoffCountdown(el.dataset.kickoff);
+  });
+}
+
+let countdownTickerId = null;
+
+function startCountdownTicker() {
+  if (countdownTickerId) {
+    clearInterval(countdownTickerId);
+  }
+  updateCountdownElements();
+  countdownTickerId = setInterval(function () {
+    updateCountdownElements();
+  }, 60000);
+}
+
+function stopCountdownTicker() {
+  if (countdownTickerId) {
+    clearInterval(countdownTickerId);
+    countdownTickerId = null;
+  }
+}

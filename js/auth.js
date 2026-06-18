@@ -68,6 +68,7 @@ function renderNav(activePage) {
   if (!nav) return;
 
   const items = [
+    { href: 'dashboard.html', label: 'Tổng quan', id: 'dashboard' },
     { href: 'fixtures.html', label: 'Lịch thi đấu', id: 'fixtures' },
     { href: 'predictions.html', label: 'Dự đoán', id: 'predictions' },
     { href: 'my-results.html', label: 'Kết quả của tôi', id: 'my-results' },

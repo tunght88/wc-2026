@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kết quả của tôi - WC 2026 Predictions</title>
+  <title>Tổng quan - WC 2026 Predictions</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/style.css">
 </head>
@@ -25,11 +25,13 @@
   <div id="reminder-banner" class="reminder-banner hidden" role="alert"></div>
 
   <main class="wc-main">
-    <h1 class="page-title">Kết quả của tôi</h1>
+    <h1 class="page-title">Tổng quan</h1>
     <div id="error-banner" class="error-banner hidden"></div>
-    <div id="achievements-container"></div>
-    <div id="stats-container"></div>
-    <div id="results-container"></div>
+
+    <div id="dashboard-summary"></div>
+    <div id="dashboard-next-match"></div>
+    <div id="dashboard-urgent"></div>
+    <div id="dashboard-quick-predict"></div>
   </main>
 
   <div id="loading" class="loading-overlay hidden">
@@ -43,6 +45,6 @@
   <script src="../js/footballApi.js"></script>
   <script src="../js/achievements.js"></script>
   <script src="../js/reminders.js"></script>
-  <script src="../js/myResults.js"></script>
+  <script src="../js/dashboard.js"></script>
 </body>
 </html>

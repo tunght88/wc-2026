@@ -29,7 +29,18 @@
     return html;
   }
 
-  function renderLeaderboard(rows) {
+  function renderKnockoutLeaderCallout(leader) {
+    if (!leader) return '';
+    return (
+      '<div class="knockout-leader-callout wc-card">' +
+        '<span class="knockout-leader-label">Vua knock-out:</span> ' +
+        '<strong>' + escapeHtml(leader.fullName) + '</strong> ' +
+        '<span class="knockout-leader-score">(' + leader.correct + ' đúng)</span>' +
+      '</div>'
+    );
+  }
+
+  function renderLeaderboard(rows, predictions, matches, players) {
     if (rows.length === 0) {
       leaderboardContainer.innerHTML =
         renderPenaltyLegend() +
@@ -40,7 +51,8 @@
       return;
     }
 
-    let html = renderPenaltyLegend();
+    const knockoutLeader = computeKnockoutLeader(players, predictions, matches);
+    let html = renderPenaltyLegend() + renderKnockoutLeaderCallout(knockoutLeader);
 
     html +=
       '<div class="wc-card">' +
@@ -50,6 +62,8 @@
               '<th class="rank-col">Hạng</th>' +
               '<th>Tên</th>' +
               '<th>Điểm phạt</th>' +
+              '<th>Streak</th>' +
+              '<th>Thành tích</th>' +
               '<th>Đúng</th>' +
               '<th>Sai</th>' +
               '<th>Chưa dự đoán</th>' +
@@ -59,11 +73,20 @@
     rows.forEach(function (row, index) {
       const rank = index + 1;
       const medal = rank === 1 ? '🥇 ' : rank === 2 ? '🥈 ' : rank === 3 ? '🥉 ' : '';
+      const achievements = computeUserAchievements(
+        row.username,
+        predictions,
+        matches,
+        players
+      );
+
       html +=
         '<tr>' +
           '<td class="rank-col">' + medal + rank + '</td>' +
           '<td class="font-semibold">' + escapeHtml(row.fullName) + '</td>' +
           '<td><strong class="penalty-score">' + row.penalties + '</strong></td>' +
+          '<td>' + achievements.streak + '</td>' +
+          '<td>' + renderAchievementBadges(achievements.badges) + '</td>' +
           '<td class="text-correct">' + row.correct + '</td>' +
           '<td class="text-wrong">' + row.wrong + '</td>' +
           '<td>' + row.missed + '</td>' +
@@ -84,17 +107,16 @@
         getPredictions(session.username, session.passwordHash),
       ]);
 
-      const players = (predResult.activeUsers || []).filter(function (user) {
-        return String(user.role || 'USER').toUpperCase() !== 'ADMIN';
+      const players = getActivePlayers(predResult.activeUsers || []);
+      const predictions = predResult.predictions || [];
+
+      const rows = computeLeaderboard(players, predictions, matches);
+
+      renderLeaderboard(rows, predictions, matches, players);
+      initReminderBanner(session, {
+        matches: matches,
+        userPredMap: buildUserPredictionMap(predictions, session.username),
       });
-
-      const rows = computeLeaderboard(
-        players,
-        predResult.predictions || [],
-        matches
-      );
-
-      renderLeaderboard(rows);
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải bảng xếp hạng';
       errorBanner.classList.remove('hidden');

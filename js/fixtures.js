@@ -88,6 +88,7 @@
     try {
       allMatches = await getMatches();
       renderMatches();
+      initReminderBanner(session, { matches: allMatches });
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải lịch thi đấu';
       errorBanner.classList.remove('hidden');

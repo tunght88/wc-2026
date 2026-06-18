@@ -520,10 +520,136 @@
     );
   }
 
-  function renderPlayerPickChart(stats, match) {
+  function buildMatchPickGroups(match, predictions, activePlayers) {
+    const players = getActivePlayers(activePlayers || []);
+    const nameMap = {};
+    players.forEach(function (player) {
+      nameMap[player.username] = player.fullName || player.username;
+    });
+
+    const groups = {
+      HOME: [],
+      DRAW: [],
+      AWAY: [],
+      counts: { HOME: 0, DRAW: 0, AWAY: 0, total: 0 },
+    };
+
+    (predictions || []).forEach(function (pred) {
+      if (String(pred.matchId) !== String(match.id)) return;
+      if (!nameMap[pred.username]) return;
+      const pick = String(pred.prediction || '').toUpperCase();
+      if (pick !== 'HOME' && pick !== 'DRAW' && pick !== 'AWAY') return;
+
+      groups.counts[pick]++;
+      groups.counts.total++;
+      groups[pick].push({
+        username: pred.username,
+        fullName: nameMap[pred.username],
+        prediction: pick,
+      });
+    });
+
+    groups.HOME.sort(function (a, b) {
+      return a.fullName.localeCompare(b.fullName, 'vi');
+    });
+    groups.DRAW.sort(function (a, b) {
+      return a.fullName.localeCompare(b.fullName, 'vi');
+    });
+    groups.AWAY.sort(function (a, b) {
+      return a.fullName.localeCompare(b.fullName, 'vi');
+    });
+
+    return groups;
+  }
+
+  function getMajorityPick(counts) {
+    if (!counts || !counts.total) return null;
+    let majority = 'HOME';
+    if (counts.DRAW >= counts.HOME && counts.DRAW >= counts.AWAY) majority = 'DRAW';
+    if (counts.AWAY >= counts.HOME && counts.AWAY >= counts.DRAW) majority = 'AWAY';
+    return majority;
+  }
+
+  function renderPickName(player, match, counts, actual) {
+    let className = 'pick-name';
+    let badge = '';
+
+    if (match.status === 'FINISHED' && actual) {
+      if (player.prediction === actual) {
+        className += ' pick-name-correct';
+      }
+      const majorityThreshold = Math.ceil((counts && counts.total) ? counts.total / 2 : 1);
+      const pickCount = counts ? counts[player.prediction] : 0;
+      if (player.prediction === actual && pickCount < majorityThreshold) {
+        className += ' pick-name-contrarian';
+        badge = ' <span class="pick-contrarian-badge">Ngược đám đông</span>';
+      }
+    }
+
+    return (
+      '<li class="' + className + '">' +
+        escapeHtml(player.fullName) + badge +
+      '</li>'
+    );
+  }
+
+  function renderPickBreakdown(match, predictions, activePlayers) {
+    const locked = isMatchLocked(match.utcDate);
+    if (!locked) {
+      return (
+        '<p class="match-info-hint pick-breakdown-hint">' +
+          'Tên người chơi sẽ hiện sau khi trận bắt đầu.' +
+        '</p>'
+      );
+    }
+
+    const groups = buildMatchPickGroups(match, predictions, activePlayers);
+    if (!groups.counts.total) {
+      return '<p class="match-info-empty">Chưa có dự đoán nào</p>';
+    }
+
+    const actual = getActualResult(match);
+    const majorityPick = getMajorityPick(groups.counts);
+    const counts = groups.counts;
+
+    const homeName = match.homeTeam.shortName || match.homeTeam.name;
+    const awayName = match.awayTeam.shortName || match.awayTeam.name;
+    const columns = [
+      { key: 'HOME', label: homeName + ' thắng' },
+      { key: 'DRAW', label: 'Hòa' },
+      { key: 'AWAY', label: awayName + ' thắng' },
+    ];
+
+    let html = '<div class="pick-breakdown">';
+    columns.forEach(function (col) {
+      const isMajority = col.key === majorityPick;
+      html +=
+        '<div class="pick-breakdown-col' + (isMajority ? ' pick-breakdown-majority' : '') + '">' +
+          '<h4 class="match-info-subtitle">' + escapeHtml(col.label) + '</h4>' +
+          '<ul class="pick-breakdown-list">';
+
+      if (!groups[col.key].length) {
+        html += '<li class="pick-name pick-name-empty">—</li>';
+      } else {
+        groups[col.key].forEach(function (player) {
+          html += renderPickName(player, match, counts, actual);
+        });
+      }
+
+      html += '</ul></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderPlayerPickChart(stats, match, pickContext) {
     const homeName = match.homeTeam.shortName || match.homeTeam.name;
     const awayName = match.awayTeam.shortName || match.awayTeam.name;
     const missingHtml = renderMissingPredictionsList(stats);
+    const locked = isMatchLocked(match.utcDate);
+    const breakdownHtml = pickContext
+      ? renderPickBreakdown(match, pickContext.predictions, pickContext.activePlayers)
+      : '';
 
     if (!stats || !stats.total) {
       return (
@@ -531,7 +657,13 @@
         '<div class="match-info-subsection">' +
           '<h4 class="match-info-subtitle">Người chưa dự đoán</h4>' +
           missingHtml +
-        '</div>'
+        '</div>' +
+        (locked
+          ? '<div class="match-info-subsection">' +
+              '<h4 class="match-info-subtitle">Ai chọn gì</h4>' +
+              breakdownHtml +
+            '</div>'
+          : '')
       );
     }
 
@@ -567,6 +699,10 @@
       '<div class="match-info-subsection">' +
         '<h4 class="match-info-subtitle">Người chưa dự đoán</h4>' +
         missingHtml +
+      '</div>' +
+      '<div class="match-info-subsection">' +
+        '<h4 class="match-info-subtitle">Ai chọn gì</h4>' +
+        breakdownHtml +
       '</div>'
     );
   }
@@ -613,7 +749,7 @@
     return html;
   }
 
-  function renderMatchInfoContent(match, fotmob, insights, pickStats) {
+  function renderMatchInfoContent(match, fotmob, insights, pickStats, pickContext) {
     const expertText =
       (insights && insights.expertAssessment) ||
       (fotmob && fotmob.expertAssessment) ||
@@ -664,7 +800,7 @@
       '</section>' +
       '<section class="match-info-section">' +
         '<h3 class="match-info-section-title">Tỷ lệ chọn của người chơi</h3>' +
-        renderPlayerPickChart(pickStats, match) +
+        renderPlayerPickChart(pickStats, match, pickContext) +
       '</section>' +
       '<section class="match-info-section">' +
         '<h3 class="match-info-section-title">Gợi ý chọn</h3>' +
@@ -673,7 +809,7 @@
     );
   }
 
-  async function openMatchInfoModal(match) {
+  async function openMatchInfoModal(match, context) {
     const home = match.homeTeam.shortName || match.homeTeam.name;
     const away = match.awayTeam.shortName || match.awayTeam.name;
 
@@ -684,15 +820,45 @@
     document.body.classList.add('modal-open');
 
     try {
-      const results = await Promise.allSettled([
+      let pickContext = context || null;
+      const needsPredictions =
+        isMatchLocked(match.utcDate) &&
+        (!pickContext || !pickContext.predictions);
+
+      const fetchTasks = [
         loadFotMobMatchInfo(match),
         getMatchInsightsData(match.id),
         getMatchPredictionStatsData(match.id),
-      ]);
+      ];
+
+      if (needsPredictions) {
+        const session = getSession();
+        if (session) {
+          fetchTasks.push(
+            getPredictions(session.username, session.passwordHash).then(function (data) {
+              return {
+                predictions: data.predictions || [],
+                activePlayers: getActivePlayers(data.activeUsers || []),
+              };
+            })
+          );
+        }
+      }
+
+      const results = await Promise.allSettled(fetchTasks);
 
       const fotmob = results[0].status === 'fulfilled' ? results[0].value : null;
       const insights = results[1].status === 'fulfilled' ? results[1].value : null;
       const pickStats = results[2].status === 'fulfilled' ? results[2].value : null;
+
+      if (needsPredictions && results[3] && results[3].status === 'fulfilled') {
+        pickContext = results[3].value;
+      } else if (pickContext && pickContext.activePlayers) {
+        pickContext.activePlayers = getActivePlayers(pickContext.activePlayers);
+      } else if (pickContext && pickContext.activeUsers) {
+        pickContext.activePlayers = getActivePlayers(pickContext.activeUsers);
+      }
+
       const fotmobError =
         results[0].status === 'rejected'
           ? (results[0].reason && results[0].reason.message) || 'Không tải được FotMob'
@@ -706,7 +872,7 @@
       if (fotmobError && !fotmob) {
         html += '<div class="match-info-fallback-banner">' + escapeHtml(fotmobError) + '</div>';
       }
-      html += renderMatchInfoContent(match, fotmob, insights, pickStats);
+      html += renderMatchInfoContent(match, fotmob, insights, pickStats, pickContext);
       bodyEl.innerHTML = html;
     } catch (err) {
       bodyEl.innerHTML =

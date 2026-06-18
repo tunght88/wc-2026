@@ -323,6 +323,7 @@
       });
 
       await Promise.all([loadUsers(), loadPredictions(), loadMissingPredictions()]);
+      initReminderBanner(session, { matches: allMatches });
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải dữ liệu admin';
       errorBanner.classList.remove('hidden');

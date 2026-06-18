@@ -5,11 +5,17 @@
   renderNav('predictions');
 
   let allMatches = [];
+  let allPredictions = [];
   let userPredictions = {};
   let activePlayers = [];
   let predictionMapByMatch = {};
   let currentTimeFilter = 'upcoming-all';
   let currentPredFilter = 'all';
+
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('pred') === 'not-predicted') {
+    currentPredFilter = 'not-predicted';
+  }
 
   const matchesContainer = document.getElementById('matches-container');
   const errorBanner = document.getElementById('error-banner');
@@ -70,7 +76,9 @@
     const score = getMatchScore(match);
     const lockedBadge = locked
       ? '<span class="badge badge-locked">Đã khóa dự đoán</span>'
-      : '';
+      : '<span class="badge badge-countdown" data-kickoff="' + escapeHtml(match.utcDate) + '">' +
+          escapeHtml(formatLockCountdown(match.utcDate)) +
+        '</span>';
     const statusBadge = STATUS_BADGES[resultStatus] || '';
     const missingPlayers = getMissingPlayersForMatch(
       match.id,
@@ -145,6 +153,7 @@
     const sorted = getFilteredMatches();
 
     if (sorted.length === 0) {
+      stopCountdownTicker();
       matchesContainer.innerHTML =
         '<div class="empty-state">' +
           '<div class="empty-state-icon">🎯</div>' +
@@ -166,10 +175,15 @@
           return String(m.id) === matchId;
         });
         if (match && typeof openMatchInfoModal === 'function') {
-          openMatchInfoModal(match);
+          openMatchInfoModal(match, {
+            predictions: allPredictions,
+            activePlayers: activePlayers,
+          });
         }
       });
     });
+
+    startCountdownTicker();
   }
 
   async function handleSave(e) {
@@ -197,8 +211,20 @@
         predictionMapByMatch[matchId] = {};
       }
       predictionMapByMatch[matchId][session.username] = true;
+      allPredictions = allPredictions.filter(function (p) {
+        return !(p.username === session.username && String(p.matchId) === String(matchId));
+      });
+      allPredictions.push({
+        username: session.username,
+        matchId: matchId,
+        prediction: radio.value,
+      });
       showToast('Đã lưu dự đoán', 'success');
       renderMatches();
+      initReminderBanner(session, {
+        matches: allMatches,
+        userPredMap: userPredictions,
+      });
     } catch (err) {
       showToast(err.message || 'Lưu thất bại', 'error');
     } finally {
@@ -218,18 +244,23 @@
       ]);
 
       allMatches = matches;
+      allPredictions = predResult.predictions || [];
       activePlayers = getActivePlayers(predResult.activeUsers || []);
       predictionMapByMatch = buildPredictionMapByMatch(
-        predResult.predictions || [],
+        allPredictions,
         activePlayers
       );
-      (predResult.predictions || []).forEach(function (p) {
+      allPredictions.forEach(function (p) {
         if (p.username === session.username) {
           userPredictions[p.matchId] = p.prediction;
         }
       });
 
       renderMatches();
+      initReminderBanner(session, {
+        matches: allMatches,
+        userPredMap: userPredictions,
+      });
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải dữ liệu';
       errorBanner.classList.remove('hidden');
