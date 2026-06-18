@@ -64,6 +64,64 @@ function buildPredictionMap(predictions) {
   return map;
 }
 
+function getActivePlayers(activeUsers) {
+  return (activeUsers || []).filter(function (user) {
+    return String(user.role || 'USER').toUpperCase() !== 'ADMIN';
+  });
+}
+
+function buildPredictionMapByMatch(predictions, players) {
+  const playerSet = {};
+  players.forEach(function (player) {
+    playerSet[player.username] = true;
+  });
+
+  const map = {};
+  (predictions || []).forEach(function (prediction) {
+    if (!playerSet[prediction.username]) return;
+    const matchId = String(prediction.matchId);
+    if (!map[matchId]) map[matchId] = {};
+    map[matchId][prediction.username] = true;
+  });
+
+  return map;
+}
+
+function getMissingPlayersForMatch(matchId, players, predictionMapByMatch) {
+  const predicted = predictionMapByMatch[String(matchId)] || {};
+  return players.filter(function (player) {
+    return !predicted[player.username];
+  });
+}
+
+function renderMatchMissingPredictions(missing, expectedTotal) {
+  if (!expectedTotal) return '';
+
+  if (!missing || missing.length === 0) {
+    return (
+      '<div class="match-missing-predictions match-missing-complete">' +
+        '<span class="match-missing-label">Dự đoán</span>' +
+        '<span class="match-missing-names">Tất cả người chơi đã dự đoán (' +
+          expectedTotal + '/' + expectedTotal + ')</span>' +
+      '</div>'
+    );
+  }
+
+  const names = missing
+    .map(function (user) {
+      return escapeHtml(user.fullName || user.username);
+    })
+    .join(', ');
+
+  return (
+    '<div class="match-missing-predictions">' +
+      '<span class="match-missing-label">Chưa dự đoán (' +
+        missing.length + '/' + expectedTotal + ')</span>' +
+      '<span class="match-missing-names">' + names + '</span>' +
+    '</div>'
+  );
+}
+
 function createLeaderboardEntry(user) {
   return {
     username: user.username,

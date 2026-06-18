@@ -6,6 +6,8 @@
 
   let allMatches = [];
   let userPredictions = {};
+  let activePlayers = [];
+  let predictionMapByMatch = {};
   let currentTimeFilter = 'upcoming-all';
   let currentPredFilter = 'all';
 
@@ -70,6 +72,15 @@
       ? '<span class="badge badge-locked">Đã khóa dự đoán</span>'
       : '';
     const statusBadge = STATUS_BADGES[resultStatus] || '';
+    const missingPlayers = getMissingPlayersForMatch(
+      match.id,
+      activePlayers,
+      predictionMapByMatch
+    );
+    const missingHtml =
+      match.status === 'FINISHED'
+        ? ''
+        : renderMatchMissingPredictions(missingPlayers, activePlayers.length);
 
     let scoreHtml = '';
     if (match.status === 'FINISHED' && score) {
@@ -125,6 +136,7 @@
             (locked ? ' disabled' : '') +
             ' data-match-id="' + escapeHtml(String(match.id)) + '">Lưu dự đoán</button>' +
         '</div>' +
+        missingHtml +
       '</div>'
     );
   }
@@ -181,6 +193,10 @@
         radio.value
       );
       userPredictions[matchId] = radio.value;
+      if (!predictionMapByMatch[matchId]) {
+        predictionMapByMatch[matchId] = {};
+      }
+      predictionMapByMatch[matchId][session.username] = true;
       showToast('Đã lưu dự đoán', 'success');
       renderMatches();
     } catch (err) {
@@ -202,6 +218,11 @@
       ]);
 
       allMatches = matches;
+      activePlayers = getActivePlayers(predResult.activeUsers || []);
+      predictionMapByMatch = buildPredictionMapByMatch(
+        predResult.predictions || [],
+        activePlayers
+      );
       (predResult.predictions || []).forEach(function (p) {
         if (p.username === session.username) {
           userPredictions[p.matchId] = p.prediction;
