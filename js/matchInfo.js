@@ -818,7 +818,7 @@
 
     titleEl.textContent = home + ' vs ' + away;
     bodyEl.innerHTML =
-      '<div class="match-info-loading"><div class="spinner"></div><p>Đang tải từ FotMob...</p></div>';
+      '<div class="match-info-loading"><div class="spinner"></div><p>Đang tải thông tin...</p></div>';
     modal.classList.remove('hidden');
     document.body.classList.add('modal-open');
 
@@ -867,13 +867,12 @@
           ? (results[0].reason && results[0].reason.message) || 'Không tải được FotMob'
           : '';
 
-      if (!fotmob && !insights) {
-        throw results[0].status === 'rejected' ? results[0].reason : new Error('Không có dữ liệu');
-      }
-
       let html = '';
-      if (fotmobError && !fotmob) {
-        html += '<div class="match-info-fallback-banner">' + escapeHtml(fotmobError) + '</div>';
+      if (fotmobError) {
+        html +=
+          '<div class="match-info-fallback-banner">' +
+            escapeHtml(fotmobError) + ' — hiển thị các thông tin khác nếu có.' +
+          '</div>';
       }
       html += renderMatchInfoContent(match, fotmob, insights, pickStats, pickContext);
       bodyEl.innerHTML = html;
