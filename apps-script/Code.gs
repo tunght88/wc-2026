@@ -7,8 +7,10 @@ const MATCH_INSIGHTS_SHEET = 'MatchInsights';
 const MATCHES_SHEET = 'Matches';
 const DEFAULT_COMPETITION = 'WC';
 const DEFAULT_SEASON = '2026';
-const DEFAULT_GROUP_ID = 'main';
-const DEFAULT_GROUP_NAME = 'Nhóm chính';
+const DEFAULT_GROUP_ID = 'group1';
+const DEFAULT_GROUP_NAME = 'Nhóm 8 9l';
+const REGISTRATION_GROUP_ID = 'group2';
+const REGISTRATION_GROUP_NAME = 'Group 2';
 
 function doGet(e) {
   return handleRequest(e);
@@ -182,29 +184,43 @@ function migratePredictionsToGroups() {
   }
 }
 
+function removeDuplicateDefaultGroups() {
+  var sheet = getGroupsSheet();
+  var data = sheet.getDataRange().getValues();
+  var defaultRows = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (groupIdsMatch(data[i][0], DEFAULT_GROUP_ID)) {
+      defaultRows.push(i + 1);
+    }
+  }
+  for (var d = defaultRows.length - 1; d >= 1; d--) {
+    sheet.deleteRow(defaultRows[d]);
+  }
+}
+
 function ensureDefaultGroup() {
   ensureGroupsSheet();
   ensureGroupMembersSheet();
   migratePredictionsToGroups();
+  removeDuplicateDefaultGroups();
 
   var groupsSheet = getGroupsSheet();
-  var data = groupsSheet.getDataRange().getValues();
-  var hasMain = false;
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === DEFAULT_GROUP_ID) {
-      hasMain = true;
-      break;
-    }
-  }
-  if (!hasMain) {
+  var defaultGroup = findDefaultGroupRow();
+
+  if (!defaultGroup) {
     groupsSheet.appendRow([DEFAULT_GROUP_ID, DEFAULT_GROUP_NAME, 'TRUE', new Date().toISOString()]);
+    defaultGroup = findDefaultGroupRow();
   }
 
+  if (!defaultGroup) return;
+
+  var canonicalGroupId = defaultGroup.groupId;
   var membersSheet = getGroupMembersSheet();
   var membersData = membersSheet.getDataRange().getValues();
   var existingMembers = {};
   for (var m = 1; m < membersData.length; m++) {
-    if (String(membersData[m][0]) === DEFAULT_GROUP_ID) {
+    if (groupIdsMatch(membersData[m][0], canonicalGroupId)) {
       existingMembers[String(membersData[m][1])] = true;
     }
   }
@@ -215,10 +231,43 @@ function ensureDefaultGroup() {
     if (!usersData[u][0]) continue;
     if (String(usersData[u][4]).toUpperCase() !== 'TRUE') continue;
     var uname = String(usersData[u][0]);
-    if (!existingMembers[uname]) {
-      membersSheet.appendRow([DEFAULT_GROUP_ID, uname, now]);
+    if (!existingMembers[uname] && !isUserInAnyGroup(uname)) {
+      membersSheet.appendRow([canonicalGroupId, uname, now]);
     }
   }
+}
+
+function ensureRegistrationGroup() {
+  ensureGroupsSheet();
+  ensureGroupMembersSheet();
+  if (!getGroupById(REGISTRATION_GROUP_ID)) {
+    getGroupsSheet().appendRow([
+      REGISTRATION_GROUP_ID,
+      REGISTRATION_GROUP_NAME,
+      'TRUE',
+      new Date().toISOString(),
+    ]);
+  }
+}
+
+function isUserInAnyGroup(username) {
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][1]) === username) return true;
+  }
+  return false;
+}
+
+function addUserToGroup(username, groupId) {
+  if (!username || !groupId) return false;
+
+  var group = getGroupById(groupId);
+  if (!group) return false;
+  if (isUserInGroup(username, groupId)) return true;
+
+  getGroupMembersSheet().appendRow([group.groupId, username, new Date().toISOString()]);
+  return true;
 }
 
 function ensureGroupsSchema() {
@@ -230,11 +279,33 @@ function sanitizeGroupId(value) {
   return String(value).trim().replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 50).toLowerCase();
 }
 
+function groupIdsMatch(a, b) {
+  return sanitizeGroupId(a) === sanitizeGroupId(b);
+}
+
+function findDefaultGroupRow() {
+  var sheet = getGroupsSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (groupIdsMatch(data[i][0], DEFAULT_GROUP_ID)) {
+      return {
+        groupId: String(data[i][0]),
+        name: String(data[i][1]),
+        active: String(data[i][2]).toUpperCase() === 'TRUE',
+        row: i + 1,
+      };
+    }
+  }
+  return null;
+}
+
 function getGroupById(groupId) {
   var sheet = getGroupsSheet();
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === groupId) {
+    if (!data[i][0]) continue;
+    if (groupIdsMatch(data[i][0], groupId)) {
       return {
         groupId: String(data[i][0]),
         name: String(data[i][1]),
@@ -250,7 +321,7 @@ function isUserInGroup(username, groupId) {
   var sheet = getGroupMembersSheet();
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === groupId && String(data[i][1]) === username) {
+    if (groupIdsMatch(data[i][0], groupId) && String(data[i][1]) === username) {
       return true;
     }
   }
@@ -288,7 +359,7 @@ function getGroupMemberUsernames(groupId) {
   var data = sheet.getDataRange().getValues();
   var members = [];
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === groupId) {
+    if (groupIdsMatch(data[i][0], groupId)) {
       members.push(String(data[i][1]));
     }
   }
@@ -358,7 +429,7 @@ function countGroupMembers(groupId) {
   var data = sheet.getDataRange().getValues();
   var count = 0;
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === groupId) count++;
+    if (groupIdsMatch(data[i][0], groupId)) count++;
   }
   return count;
 }
@@ -708,6 +779,9 @@ function handleRegister(payload) {
 
   getUsersSheet().appendRow([username, passwordHash, fullName, 'USER', 'FALSE']);
 
+  ensureRegistrationGroup();
+  addUserToGroup(username, REGISTRATION_GROUP_ID);
+
   return {
     success: true,
     message: 'Đăng ký thành công. Vui lòng chờ admin kích hoạt tài khoản.',
@@ -936,6 +1010,11 @@ function handleSavePrediction(payload) {
     return { success: false, message: 'Đã khóa dự đoán - trận đấu đã bắt đầu' };
   }
 
+  var canonicalGroup = getGroupById(groupId);
+  if (!canonicalGroup) {
+    return { success: false, message: 'Nhóm không tồn tại' };
+  }
+
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var now = new Date().toISOString();
@@ -943,7 +1022,7 @@ function handleSavePrediction(payload) {
 
   for (var i = 1; i < data.length; i++) {
     if (
-      String(data[i][0]) === groupId &&
+      groupIdsMatch(data[i][0], canonicalGroup.groupId) &&
       String(data[i][1]) === username &&
       String(data[i][2]) === matchId
     ) {
@@ -956,7 +1035,7 @@ function handleSavePrediction(payload) {
     sheet.getRange(foundRow, 4).setValue(prediction);
     sheet.getRange(foundRow, 5).setValue(now);
   } else {
-    sheet.appendRow([groupId, username, matchId, prediction, now]);
+    sheet.appendRow([canonicalGroup.groupId, username, matchId, prediction, now]);
   }
 
   return { success: true, message: 'Đã lưu dự đoán' };
@@ -999,7 +1078,7 @@ function handleGetPredictions(payload) {
   var predictions = [];
 
   for (var i = 1; i < data.length; i++) {
-    if (!data[i][0] || String(data[i][0]) !== groupId) continue;
+    if (!data[i][0] || !groupIdsMatch(data[i][0], groupId)) continue;
     predictions.push({
       username: String(data[i][1]),
       matchId: String(data[i][2]),
@@ -1045,7 +1124,7 @@ function buildPredictionMapByMatch(groupId) {
 
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0] || !data[i][2]) continue;
-    if (groupId && String(data[i][0]) !== groupId) continue;
+    if (groupId && !groupIdsMatch(data[i][0], groupId)) continue;
     var matchId = String(data[i][2]);
     if (!map[matchId]) map[matchId] = {};
     map[matchId][String(data[i][1])] = String(data[i][3]).toUpperCase();
@@ -1093,7 +1172,7 @@ function handleGetMatchPredictionStats(payload) {
   var predictedUsers = {};
 
   for (var i = 1; i < data.length; i++) {
-    if (!data[i][0] || String(data[i][0]) !== groupId) continue;
+    if (!data[i][0] || !groupIdsMatch(data[i][0], groupId)) continue;
     if (String(data[i][2]) !== matchId) continue;
     if (!playerSet[String(data[i][1])]) continue;
 
@@ -1372,7 +1451,7 @@ function handleToggleGroupStatus(payload) {
     return { success: false, message: 'Thiếu groupId' };
   }
 
-  if (groupId === DEFAULT_GROUP_ID) {
+  if (groupIdsMatch(groupId, DEFAULT_GROUP_ID)) {
     return { success: false, message: 'Không thể khóa nhóm mặc định' };
   }
 
@@ -1414,7 +1493,7 @@ function handleGetGroupMembers(payload) {
   var members = [];
 
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) !== groupId) continue;
+    if (!groupIdsMatch(data[i][0], groupId)) continue;
     var uname = String(data[i][1]);
     members.push({
       username: uname,
@@ -1453,7 +1532,9 @@ function handleAddGroupMember(payload) {
     return { success: false, message: 'User đã thuộc nhóm này' };
   }
 
-  getGroupMembersSheet().appendRow([groupId, targetUsername, new Date().toISOString()]);
+  var canonicalGroupId = getGroupById(groupId).groupId;
+
+  getGroupMembersSheet().appendRow([canonicalGroupId, targetUsername, new Date().toISOString()]);
 
   return { success: true, message: 'Đã thêm thành viên vào nhóm' };
 }
@@ -1476,7 +1557,7 @@ function handleRemoveGroupMember(payload) {
   var data = sheet.getDataRange().getValues();
 
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === groupId && String(data[i][1]) === targetUsername) {
+    if (groupIdsMatch(data[i][0], groupId) && String(data[i][1]) === targetUsername) {
       sheet.deleteRow(i + 1);
       return { success: true, message: 'Đã xóa thành viên khỏi nhóm' };
     }
