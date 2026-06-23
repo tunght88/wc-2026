@@ -1,4 +1,8 @@
-async function loadMyGroups(session) {
+async function loadMyGroups(session, forceReload) {
+  if (!forceReload && Array.isArray(session.groups)) {
+    return session.groups;
+  }
+
   const data = await getMyGroups(session.username, session.passwordHash);
   const groups = data.groups || [];
   session.groups = groups;
@@ -11,10 +15,11 @@ function clearCurrentGroup(session) {
   saveSession(session);
 }
 
-async function initGroupContext(session) {
+async function initGroupContext(session, options) {
   if (!session) return null;
 
-  const groups = await loadMyGroups(session);
+  const forceReload = options && options.forceReload;
+  const groups = await loadMyGroups(session, forceReload);
 
   if (groups.length === 0) {
     clearCurrentGroup(session);

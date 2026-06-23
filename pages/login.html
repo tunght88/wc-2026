@@ -85,7 +85,7 @@
             fullName: result.fullName,
             role: result.role,
           });
-          const session = await initGroupContext(getSession());
+          const session = await initGroupContext(getSession(), { forceReload: true });
           if (session) {
             window.location.href = 'fixtures.html';
           }

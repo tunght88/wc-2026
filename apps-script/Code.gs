@@ -1,4 +1,4 @@
-const SPREADSHEET_ID = '11U05dXHIZwBw81vqCtcz6HTvGlBzDqs351EzdQ17kVU';
+const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE';
 const USERS_SHEET = 'Users';
 const PREDICTIONS_SHEET = 'Predictions';
 const GROUPS_SHEET = 'Groups';
@@ -106,196 +106,20 @@ function getUsersSheet() {
 }
 
 function getPredictionsSheet() {
-  ensureGroupsSchema();
   return getSpreadsheet().getSheetByName(PREDICTIONS_SHEET);
 }
 
 function getGroupsSheet() {
-  return ensureGroupsSheet();
+  return getSpreadsheet().getSheetByName(GROUPS_SHEET);
 }
 
 function getGroupMembersSheet() {
-  return ensureGroupMembersSheet();
-}
-
-function ensureGroupsSheet() {
-  var ss = getSpreadsheet();
-  var sheet = ss.getSheetByName(GROUPS_SHEET);
-  if (!sheet) {
-    sheet = ss.insertSheet(GROUPS_SHEET);
-    sheet
-      .getRange(1, 1, 1, 5)
-      .setValues([['group_id', 'name', 'active', 'created_at', 'start_date']])
-      .setFontWeight('bold');
-    sheet.setFrozenRows(1);
-  }
-  ensureGroupsStartDateColumn();
-  return sheet;
-}
-
-function ensureGroupsStartDateColumn() {
-  var sheet = getSpreadsheet().getSheetByName(GROUPS_SHEET);
-  if (!sheet) return;
-  if (sheet.getLastRow() === 0) {
-    sheet
-      .getRange(1, 1, 1, 5)
-      .setValues([['group_id', 'name', 'active', 'created_at', 'start_date']])
-      .setFontWeight('bold');
-    sheet.setFrozenRows(1);
-    return;
-  }
-  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var hasStartDate = false;
-  for (var c = 0; c < header.length; c++) {
-    if (String(header[c]).toLowerCase() === 'start_date') {
-      hasStartDate = true;
-      break;
-    }
-  }
-  if (!hasStartDate) {
-    sheet.getRange(1, 5).setValue('start_date').setFontWeight('bold');
-  }
-}
-
-function ensureGroupMembersSheet() {
-  var ss = getSpreadsheet();
-  var sheet = ss.getSheetByName(GROUP_MEMBERS_SHEET);
-  if (!sheet) {
-    sheet = ss.insertSheet(GROUP_MEMBERS_SHEET);
-    sheet
-      .getRange(1, 1, 1, 3)
-      .setValues([['group_id', 'username', 'joined_at']])
-      .setFontWeight('bold');
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-function migratePredictionsToGroups() {
-  var sheet = getSpreadsheet().getSheetByName(PREDICTIONS_SHEET);
-  if (!sheet) {
-    sheet = getSpreadsheet().insertSheet(PREDICTIONS_SHEET);
-  }
-
-  if (sheet.getLastRow() === 0) {
-    sheet
-      .getRange(1, 1, 1, 5)
-      .setValues([['group_id', 'username', 'match_id', 'prediction', 'updated_at']])
-      .setFontWeight('bold');
-    sheet.setFrozenRows(1);
-    return;
-  }
-
-  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (String(header[0]).toLowerCase() === 'group_id') {
-    return;
-  }
-
-  var data = sheet.getDataRange().getValues();
-  var newData = [['group_id', 'username', 'match_id', 'prediction', 'updated_at']];
-  for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    newData.push([
-      DEFAULT_GROUP_ID,
-      String(data[i][0]),
-      String(data[i][1]),
-      String(data[i][2]),
-      String(data[i][3] || ''),
-    ]);
-  }
-
-  sheet.clear();
-  if (newData.length > 0) {
-    sheet.getRange(1, 1, newData.length, 5).setValues(newData);
-    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
-    sheet.setFrozenRows(1);
-  }
-}
-
-function removeDuplicateDefaultGroups() {
-  var sheet = getGroupsSheet();
-  var data = sheet.getDataRange().getValues();
-  var defaultRows = [];
-  for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    if (groupIdsMatch(data[i][0], DEFAULT_GROUP_ID)) {
-      defaultRows.push(i + 1);
-    }
-  }
-  for (var d = defaultRows.length - 1; d >= 1; d--) {
-    sheet.deleteRow(defaultRows[d]);
-  }
-}
-
-function ensureDefaultGroup() {
-  ensureGroupsSheet();
-  ensureGroupMembersSheet();
-  migratePredictionsToGroups();
-  removeDuplicateDefaultGroups();
-
-  var groupsSheet = getGroupsSheet();
-  var defaultGroup = findDefaultGroupRow();
-
-  if (!defaultGroup) {
-    groupsSheet.appendRow([
-      DEFAULT_GROUP_ID,
-      DEFAULT_GROUP_NAME,
-      'TRUE',
-      new Date().toISOString(),
-      '',
-    ]);
-    defaultGroup = findDefaultGroupRow();
-  }
-
-  if (!defaultGroup) return;
-
-  var canonicalGroupId = defaultGroup.groupId;
-  var membersSheet = getGroupMembersSheet();
-  var membersData = membersSheet.getDataRange().getValues();
-  var existingMembers = {};
-  for (var m = 1; m < membersData.length; m++) {
-    if (groupIdsMatch(membersData[m][0], canonicalGroupId)) {
-      existingMembers[String(membersData[m][1])] = true;
-    }
-  }
-
-  var usersData = getUsersSheet().getDataRange().getValues();
-  var now = new Date().toISOString();
-  for (var u = 1; u < usersData.length; u++) {
-    if (!usersData[u][0]) continue;
-    if (String(usersData[u][4]).toUpperCase() !== 'TRUE') continue;
-    var uname = String(usersData[u][0]);
-    if (!existingMembers[uname] && !isUserInAnyGroup(uname)) {
-      membersSheet.appendRow([canonicalGroupId, uname, now]);
-    }
-  }
-}
-
-function ensureRegistrationGroup() {
-  ensureGroupsSheet();
-  ensureGroupMembersSheet();
-  if (!getGroupById(REGISTRATION_GROUP_ID)) {
-    getGroupsSheet().appendRow([
-      REGISTRATION_GROUP_ID,
-      REGISTRATION_GROUP_NAME,
-      'TRUE',
-      new Date().toISOString(),
-      '',
-    ]);
-  }
-}
-
-function isUserInAnyGroup(username) {
-  var sheet = getGroupMembersSheet();
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][1]) === username) return true;
-  }
-  return false;
+  return getSpreadsheet().getSheetByName(GROUP_MEMBERS_SHEET);
 }
 
 function addUserToGroup(username, groupId) {
   if (!username || !groupId) return false;
+  if (!getGroupMembersSheet()) return false;
 
   var group = getGroupById(groupId);
   if (!group) return false;
@@ -303,10 +127,6 @@ function addUserToGroup(username, groupId) {
 
   getGroupMembersSheet().appendRow([group.groupId, username, new Date().toISOString()]);
   return true;
-}
-
-function ensureGroupsSchema() {
-  ensureDefaultGroup();
 }
 
 function sanitizeGroupId(value) {
@@ -361,20 +181,9 @@ function isMatchOnOrAfterGroupStart(match, startDate) {
   return getMatchDateInAppTimezone(match.utcDate) >= startDate;
 }
 
-function findDefaultGroupRow() {
-  var sheet = getGroupsSheet();
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    if (groupIdsMatch(data[i][0], DEFAULT_GROUP_ID)) {
-      return mapGroupFromRow(data[i], i);
-    }
-  }
-  return null;
-}
-
 function getGroupById(groupId) {
   var sheet = getGroupsSheet();
+  if (!sheet) return null;
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
@@ -387,6 +196,7 @@ function getGroupById(groupId) {
 
 function isUserInGroup(username, groupId) {
   var sheet = getGroupMembersSheet();
+  if (!sheet) return false;
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (groupIdsMatch(data[i][0], groupId) && String(data[i][1]) === username) {
@@ -472,19 +282,37 @@ function getActivePlayerUsernamesInGroup(groupId) {
   return map;
 }
 
-function getGroupsForUser(username) {
-  var sheet = getGroupMembersSheet();
+function getAllGroupsMap() {
+  var sheet = getGroupsSheet();
+  if (!sheet) return {};
   var data = sheet.getDataRange().getValues();
-  var groupIds = [];
+  var map = {};
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][1]) === username) {
-      groupIds.push(String(data[i][0]));
+    if (!data[i][0]) continue;
+    var group = mapGroupFromRow(data[i], i);
+    map[sanitizeGroupId(group.groupId)] = group;
+  }
+  return map;
+}
+
+function getGroupsForUser(username) {
+  var membersSheet = getGroupMembersSheet();
+  if (!membersSheet) return [];
+  var membersData = membersSheet.getDataRange().getValues();
+  var memberGroupKeys = {};
+  for (var i = 1; i < membersData.length; i++) {
+    if (String(membersData[i][1]) === username) {
+      memberGroupKeys[sanitizeGroupId(membersData[i][0])] = true;
     }
   }
 
+  var groupKeys = Object.keys(memberGroupKeys);
+  if (groupKeys.length === 0) return [];
+
+  var groupsMap = getAllGroupsMap();
   var groups = [];
-  groupIds.forEach(function (groupId) {
-    var group = getGroupById(groupId);
+  groupKeys.forEach(function (key) {
+    var group = groupsMap[key];
     if (group && group.active) {
       groups.push({
         groupId: group.groupId,
@@ -851,7 +679,6 @@ function handleRegister(payload) {
 
   getUsersSheet().appendRow([username, passwordHash, fullName, 'USER', 'FALSE']);
 
-  ensureRegistrationGroup();
   addUserToGroup(username, REGISTRATION_GROUP_ID);
 
   return {
@@ -1046,7 +873,6 @@ function isMatchOpenForPrediction(match) {
 }
 
 function handleSavePrediction(payload) {
-  ensureGroupsSchema();
   var username = sanitizeUsername(payload.username);
   var passwordHash = String(payload.passwordHash || '');
   var groupId = sanitizeGroupId(payload.groupId);
@@ -1118,7 +944,6 @@ function handleSavePrediction(payload) {
 }
 
 function handleGetPredictions(payload) {
-  ensureGroupsSchema();
   var username = sanitizeUsername(payload.username);
   var passwordHash = String(payload.passwordHash || '');
   var groupId = sanitizeGroupId(payload.groupId);
@@ -1223,7 +1048,6 @@ function getMissingPlayersForMatch(matchId, players, predictionMap) {
 }
 
 function handleGetMatchPredictionStats(payload) {
-  ensureGroupsSchema();
   var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1284,7 +1108,6 @@ function handleGetMatchPredictionStats(payload) {
 }
 
 function handleGetMissingPredictions(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1455,7 +1278,6 @@ function handleToggleUserStatus(payload) {
 }
 
 function handleGetMyGroups(payload) {
-  ensureGroupsSchema();
   var username = sanitizeUsername(payload.username);
   var passwordHash = String(payload.passwordHash || '');
 
@@ -1468,7 +1290,6 @@ function handleGetMyGroups(payload) {
 }
 
 function handleGetGroups(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1495,7 +1316,6 @@ function handleGetGroups(payload) {
 }
 
 function handleCreateGroup(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1525,7 +1345,6 @@ function handleCreateGroup(payload) {
 }
 
 function handleUpdateGroup(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1567,7 +1386,6 @@ function handleUpdateGroup(payload) {
 }
 
 function handleToggleGroupStatus(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1598,7 +1416,6 @@ function handleToggleGroupStatus(payload) {
 }
 
 function handleGetGroupMembers(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1633,7 +1450,6 @@ function handleGetGroupMembers(payload) {
 }
 
 function handleAddGroupMember(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
@@ -1667,7 +1483,6 @@ function handleAddGroupMember(payload) {
 }
 
 function handleRemoveGroupMember(payload) {
-  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
