@@ -838,7 +838,7 @@
         const session = getSession();
         if (session) {
           fetchTasks.push(
-            getPredictions(session.username, session.passwordHash).then(function (data) {
+            getPredictions(session.username, session.passwordHash, getCurrentGroupId()).then(function (data) {
               return {
                 predictions: data.predictions || [],
                 activePlayers: getActivePlayers(data.activeUsers || []),

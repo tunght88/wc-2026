@@ -1,5 +1,7 @@
-(function () {
-  const session = requireAuth();
+(async function () {
+  let session = requireAuth();
+  if (!session) return;
+  session = await initGroupContext(session);
   if (!session) return;
 
   renderNav('dashboard');
@@ -178,6 +180,7 @@
       await savePrediction(
         session.username,
         session.passwordHash,
+        getCurrentGroupId(),
         matchId,
         radio.value
       );
@@ -233,7 +236,7 @@
     try {
       const [matches, predResult] = await Promise.all([
         getMatches(),
-        getPredictions(session.username, session.passwordHash),
+        getPredictions(session.username, session.passwordHash, getCurrentGroupId()),
       ]);
 
       allMatches = matches;

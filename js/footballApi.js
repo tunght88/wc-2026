@@ -269,11 +269,17 @@ async function getMatchInsightsData(matchId) {
 }
 
 async function getMatchPredictionStatsData(matchId) {
-  const key = 'pickstats_' + matchId;
+  const groupId = getCurrentGroupId();
+  const key = 'pickstats_' + groupId + '_' + matchId;
   if (MATCH_INFO_CACHE[key]) return MATCH_INFO_CACHE[key];
 
   const session = getFootballSession();
-  const data = await getMatchPredictionStats(session.username, session.passwordHash, matchId);
+  const data = await getMatchPredictionStats(
+    session.username,
+    session.passwordHash,
+    groupId,
+    matchId
+  );
   MATCH_INFO_CACHE[key] = data.stats;
   return data.stats;
 }
@@ -561,6 +567,71 @@ function isMinorityPick(counts, prediction) {
 
   const maxCount = Math.max(counts.HOME, counts.DRAW, counts.AWAY);
   return counts[pick] < maxCount;
+}
+
+function computeMatchPickStats(matchId, predMap, players) {
+  const counts = buildMatchPickCounts(matchId, predMap, players);
+  const total = counts.total;
+  return {
+    home: counts.HOME,
+    draw: counts.DRAW,
+    away: counts.AWAY,
+    total: total,
+    homePct: total ? Math.round((counts.HOME / total) * 100) : 0,
+    drawPct: total ? Math.round((counts.DRAW / total) * 100) : 0,
+    awayPct: total ? Math.round((counts.AWAY / total) * 100) : 0,
+  };
+}
+
+function buildAllMatchPickStats(predictions, activeUsers) {
+  const players = getActivePlayers(activeUsers);
+  const predMap = buildPredictionMap(predictions);
+  const matchIds = {};
+  const map = {};
+
+  (predictions || []).forEach(function (p) {
+    if (!players.some(function (player) {
+      return player.username === p.username;
+    })) {
+      return;
+    }
+    matchIds[String(p.matchId)] = true;
+  });
+
+  Object.keys(matchIds).forEach(function (matchId) {
+    map[matchId] = computeMatchPickStats(matchId, predMap, players);
+  });
+
+  return map;
+}
+
+function renderMatchPickRates(stats, match) {
+  if (!stats || !stats.total) return '';
+
+  const homeName = match.homeTeam.shortName || match.homeTeam.name;
+  const awayName = match.awayTeam.shortName || match.awayTeam.name;
+  const homeEnd = stats.homePct;
+  const drawEnd = homeEnd + stats.drawPct;
+  const barStyle =
+    'background: linear-gradient(to right, #16a34a 0% ' + homeEnd + '%, ' +
+    '#4f46e5 ' + homeEnd + '% ' + drawEnd + '%, ' +
+    '#d97706 ' + drawEnd + '% 100%)';
+
+  return (
+    '<div class="match-pick-rates">' +
+      '<span class="match-pick-rates-heading">Nhóm chọn</span>' +
+      '<div class="match-pick-rates-bar" style="' + barStyle + '" role="img" aria-label="Tỷ lệ chọn nhóm"></div>' +
+      '<div class="match-pick-rates-labels">' +
+        '<span class="match-pick-rate match-pick-rate-home" title="' + escapeHtml(homeName) + ' thắng">' +
+          escapeHtml(homeName) + ' ' + stats.homePct + '%' +
+        '</span>' +
+        '<span class="match-pick-rate match-pick-rate-draw" title="Hòa">Hòa ' + stats.drawPct + '%</span>' +
+        '<span class="match-pick-rate match-pick-rate-away" title="' + escapeHtml(awayName) + ' thắng">' +
+          escapeHtml(awayName) + ' ' + stats.awayPct + '%' +
+        '</span>' +
+      '</div>' +
+    '</div>'
+  );
 }
 
 function formatNoonDayLabel(date) {

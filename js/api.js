@@ -38,12 +38,63 @@ async function register(username, passwordHash, fullName) {
   return postAction('register', { username, passwordHash, fullName });
 }
 
-async function savePrediction(username, passwordHash, matchId, prediction) {
-  return postAction('savePrediction', { username, passwordHash, matchId, prediction });
+async function savePrediction(username, passwordHash, groupId, matchId, prediction) {
+  return postAction('savePrediction', { username, passwordHash, groupId, matchId, prediction });
 }
 
-async function getPredictions(username, passwordHash) {
-  return postAction('getPredictions', { username, passwordHash });
+async function getPredictions(username, passwordHash, groupId) {
+  return postAction('getPredictions', { username, passwordHash, groupId });
+}
+
+async function getMyGroups(username, passwordHash) {
+  return postAction('getMyGroups', { username, passwordHash });
+}
+
+async function getGroups(adminUsername, adminPasswordHash) {
+  return postAction('getGroups', { username: adminUsername, passwordHash: adminPasswordHash });
+}
+
+async function createGroup(adminUsername, adminPasswordHash, groupId, name) {
+  return postAction('createGroup', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    groupId,
+    name,
+  });
+}
+
+async function toggleGroupStatus(adminUsername, adminPasswordHash, groupId) {
+  return postAction('toggleGroupStatus', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    groupId,
+  });
+}
+
+async function getGroupMembers(adminUsername, adminPasswordHash, groupId) {
+  return postAction('getGroupMembers', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    groupId,
+  });
+}
+
+async function addGroupMember(adminUsername, adminPasswordHash, groupId, targetUsername) {
+  return postAction('addGroupMember', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    groupId,
+    targetUsername,
+  });
+}
+
+async function removeGroupMember(adminUsername, adminPasswordHash, groupId, targetUsername) {
+  return postAction('removeGroupMember', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    groupId,
+    targetUsername,
+  });
 }
 
 async function getUsers(username, passwordHash) {
@@ -134,10 +185,11 @@ async function getFotMobMatchInfo(username, passwordHash, match) {
   });
 }
 
-async function getMatchPredictionStats(username, passwordHash, matchId) {
+async function getMatchPredictionStats(username, passwordHash, groupId, matchId) {
   return postAction('getMatchPredictionStats', {
     username,
     passwordHash,
+    groupId,
     matchId,
   });
 }
@@ -151,10 +203,11 @@ async function syncMatches(adminUsername, adminPasswordHash, competition, season
   });
 }
 
-async function getMissingPredictions(adminUsername, adminPasswordHash, competition, season) {
+async function getMissingPredictions(adminUsername, adminPasswordHash, groupId, competition, season) {
   return postAction('getMissingPredictions', {
     username: adminUsername,
     passwordHash: adminPasswordHash,
+    groupId,
     competition,
     season,
   });

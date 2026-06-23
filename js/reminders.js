@@ -33,7 +33,7 @@ async function initReminderBanner(session, options) {
     if (!matches || !userPredMap) {
       const [loadedMatches, predResult] = await Promise.all([
         getMatches(),
-        getPredictions(session.username, session.passwordHash),
+        getPredictions(session.username, session.passwordHash, getCurrentGroupId()),
       ]);
       matches = loadedMatches;
       userPredMap = buildUserPredictionMap(predResult.predictions || [], session.username);

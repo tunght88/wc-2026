@@ -1,10 +1,14 @@
 const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE';
 const USERS_SHEET = 'Users';
 const PREDICTIONS_SHEET = 'Predictions';
+const GROUPS_SHEET = 'Groups';
+const GROUP_MEMBERS_SHEET = 'GroupMembers';
 const MATCH_INSIGHTS_SHEET = 'MatchInsights';
 const MATCHES_SHEET = 'Matches';
 const DEFAULT_COMPETITION = 'WC';
 const DEFAULT_SEASON = '2026';
+const DEFAULT_GROUP_ID = 'main';
+const DEFAULT_GROUP_NAME = 'Nhóm chính';
 
 function doGet(e) {
   return handleRequest(e);
@@ -62,6 +66,20 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleSyncMatches(payload)));
       case 'getMissingPredictions':
         return corsResponse(JSON.stringify(handleGetMissingPredictions(payload)));
+      case 'getMyGroups':
+        return corsResponse(JSON.stringify(handleGetMyGroups(payload)));
+      case 'getGroups':
+        return corsResponse(JSON.stringify(handleGetGroups(payload)));
+      case 'createGroup':
+        return corsResponse(JSON.stringify(handleCreateGroup(payload)));
+      case 'toggleGroupStatus':
+        return corsResponse(JSON.stringify(handleToggleGroupStatus(payload)));
+      case 'getGroupMembers':
+        return corsResponse(JSON.stringify(handleGetGroupMembers(payload)));
+      case 'addGroupMember':
+        return corsResponse(JSON.stringify(handleAddGroupMember(payload)));
+      case 'removeGroupMember':
+        return corsResponse(JSON.stringify(handleRemoveGroupMember(payload)));
       default:
         return corsResponse(JSON.stringify({ success: false, message: 'Action không hợp lệ' }));
     }
@@ -83,7 +101,266 @@ function getUsersSheet() {
 }
 
 function getPredictionsSheet() {
+  ensureGroupsSchema();
   return getSpreadsheet().getSheetByName(PREDICTIONS_SHEET);
+}
+
+function getGroupsSheet() {
+  return ensureGroupsSheet();
+}
+
+function getGroupMembersSheet() {
+  return ensureGroupMembersSheet();
+}
+
+function ensureGroupsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(GROUPS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(GROUPS_SHEET);
+    sheet
+      .getRange(1, 1, 1, 4)
+      .setValues([['group_id', 'name', 'active', 'created_at']])
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function ensureGroupMembersSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(GROUP_MEMBERS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(GROUP_MEMBERS_SHEET);
+    sheet
+      .getRange(1, 1, 1, 3)
+      .setValues([['group_id', 'username', 'joined_at']])
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function migratePredictionsToGroups() {
+  var sheet = getSpreadsheet().getSheetByName(PREDICTIONS_SHEET);
+  if (!sheet) {
+    sheet = getSpreadsheet().insertSheet(PREDICTIONS_SHEET);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet
+      .getRange(1, 1, 1, 5)
+      .setValues([['group_id', 'username', 'match_id', 'prediction', 'updated_at']])
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    return;
+  }
+
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (String(header[0]).toLowerCase() === 'group_id') {
+    return;
+  }
+
+  var data = sheet.getDataRange().getValues();
+  var newData = [['group_id', 'username', 'match_id', 'prediction', 'updated_at']];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    newData.push([
+      DEFAULT_GROUP_ID,
+      String(data[i][0]),
+      String(data[i][1]),
+      String(data[i][2]),
+      String(data[i][3] || ''),
+    ]);
+  }
+
+  sheet.clear();
+  if (newData.length > 0) {
+    sheet.getRange(1, 1, newData.length, 5).setValues(newData);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+}
+
+function ensureDefaultGroup() {
+  ensureGroupsSheet();
+  ensureGroupMembersSheet();
+  migratePredictionsToGroups();
+
+  var groupsSheet = getGroupsSheet();
+  var data = groupsSheet.getDataRange().getValues();
+  var hasMain = false;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === DEFAULT_GROUP_ID) {
+      hasMain = true;
+      break;
+    }
+  }
+  if (!hasMain) {
+    groupsSheet.appendRow([DEFAULT_GROUP_ID, DEFAULT_GROUP_NAME, 'TRUE', new Date().toISOString()]);
+  }
+
+  var membersSheet = getGroupMembersSheet();
+  var membersData = membersSheet.getDataRange().getValues();
+  var existingMembers = {};
+  for (var m = 1; m < membersData.length; m++) {
+    if (String(membersData[m][0]) === DEFAULT_GROUP_ID) {
+      existingMembers[String(membersData[m][1])] = true;
+    }
+  }
+
+  var usersData = getUsersSheet().getDataRange().getValues();
+  var now = new Date().toISOString();
+  for (var u = 1; u < usersData.length; u++) {
+    if (!usersData[u][0]) continue;
+    if (String(usersData[u][4]).toUpperCase() !== 'TRUE') continue;
+    var uname = String(usersData[u][0]);
+    if (!existingMembers[uname]) {
+      membersSheet.appendRow([DEFAULT_GROUP_ID, uname, now]);
+    }
+  }
+}
+
+function ensureGroupsSchema() {
+  ensureDefaultGroup();
+}
+
+function sanitizeGroupId(value) {
+  if (!value) return '';
+  return String(value).trim().replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 50).toLowerCase();
+}
+
+function getGroupById(groupId) {
+  var sheet = getGroupsSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === groupId) {
+      return {
+        groupId: String(data[i][0]),
+        name: String(data[i][1]),
+        active: String(data[i][2]).toUpperCase() === 'TRUE',
+        row: i + 1,
+      };
+    }
+  }
+  return null;
+}
+
+function isUserInGroup(username, groupId) {
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === groupId && String(data[i][1]) === username) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function verifyGroupMembership(username, groupId) {
+  if (!groupId) {
+    return { valid: false, message: 'Thiếu groupId' };
+  }
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { valid: false, message: 'Nhóm không tồn tại' };
+  }
+  if (!group.active) {
+    return { valid: false, message: 'Nhóm đã bị khóa' };
+  }
+  if (!isUserInGroup(username, groupId)) {
+    return { valid: false, message: 'Bạn không thuộc nhóm này' };
+  }
+  return { valid: true, group: group };
+}
+
+function getUserNameMap() {
+  var usersData = getUsersSheet().getDataRange().getValues();
+  var nameMap = {};
+  for (var u = 1; u < usersData.length; u++) {
+    nameMap[String(usersData[u][0])] = String(usersData[u][2]);
+  }
+  return nameMap;
+}
+
+function getGroupMemberUsernames(groupId) {
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+  var members = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === groupId) {
+      members.push(String(data[i][1]));
+    }
+  }
+  return members;
+}
+
+function getActiveUsersInGroup(groupId) {
+  var memberUsernames = getGroupMemberUsernames(groupId);
+  var memberSet = {};
+  memberUsernames.forEach(function (uname) {
+    memberSet[uname] = true;
+  });
+
+  var usersData = getUsersSheet().getDataRange().getValues();
+  var activeUsers = [];
+  for (var a = 1; a < usersData.length; a++) {
+    if (!usersData[a][0]) continue;
+    var uname = String(usersData[a][0]);
+    if (!memberSet[uname]) continue;
+    if (String(usersData[a][4]).toUpperCase() !== 'TRUE') continue;
+    activeUsers.push({
+      username: uname,
+      fullName: String(usersData[a][2]),
+      role: String(usersData[a][3]).toUpperCase(),
+    });
+  }
+  return activeUsers;
+}
+
+function getActivePlayersInGroup(groupId) {
+  return getActiveUsersInGroup(groupId).filter(function (user) {
+    return user.role !== 'ADMIN';
+  });
+}
+
+function getActivePlayerUsernamesInGroup(groupId) {
+  var players = getActivePlayersInGroup(groupId);
+  var map = {};
+  players.forEach(function (player) {
+    map[player.username] = true;
+  });
+  return map;
+}
+
+function getGroupsForUser(username) {
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+  var groupIds = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][1]) === username) {
+      groupIds.push(String(data[i][0]));
+    }
+  }
+
+  var groups = [];
+  groupIds.forEach(function (groupId) {
+    var group = getGroupById(groupId);
+    if (group && group.active) {
+      groups.push({ groupId: group.groupId, name: group.name });
+    }
+  });
+  return groups;
+}
+
+function countGroupMembers(groupId) {
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+  var count = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === groupId) count++;
+  }
+  return count;
 }
 
 function getMatchInsightsSheet() {
@@ -623,12 +900,14 @@ function isMatchOpenForPrediction(match) {
 }
 
 function handleSavePrediction(payload) {
+  ensureGroupsSchema();
   var username = sanitizeUsername(payload.username);
   var passwordHash = String(payload.passwordHash || '');
+  var groupId = sanitizeGroupId(payload.groupId);
   var matchId = String(payload.matchId || '');
   var prediction = String(payload.prediction || '').toUpperCase();
 
-  if (!username || !passwordHash || !matchId || !prediction) {
+  if (!username || !passwordHash || !groupId || !matchId || !prediction) {
     return { success: false, message: 'Thiếu thông tin dự đoán' };
   }
 
@@ -639,6 +918,11 @@ function handleSavePrediction(payload) {
   var auth = verifyUser(username, passwordHash);
   if (!auth.valid) {
     return { success: false, message: auth.message };
+  }
+
+  var groupAuth = verifyGroupMembership(username, groupId);
+  if (!groupAuth.valid) {
+    return { success: false, message: groupAuth.message };
   }
 
   var match;
@@ -658,62 +942,70 @@ function handleSavePrediction(payload) {
   var foundRow = -1;
 
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === username && String(data[i][1]) === matchId) {
+    if (
+      String(data[i][0]) === groupId &&
+      String(data[i][1]) === username &&
+      String(data[i][2]) === matchId
+    ) {
       foundRow = i + 1;
       break;
     }
   }
 
   if (foundRow > 0) {
-    sheet.getRange(foundRow, 3).setValue(prediction);
-    sheet.getRange(foundRow, 4).setValue(now);
+    sheet.getRange(foundRow, 4).setValue(prediction);
+    sheet.getRange(foundRow, 5).setValue(now);
   } else {
-    sheet.appendRow([username, matchId, prediction, now]);
+    sheet.appendRow([groupId, username, matchId, prediction, now]);
   }
 
   return { success: true, message: 'Đã lưu dự đoán' };
 }
 
 function handleGetPredictions(payload) {
+  ensureGroupsSchema();
   var username = sanitizeUsername(payload.username);
   var passwordHash = String(payload.passwordHash || '');
+  var groupId = sanitizeGroupId(payload.groupId);
 
   var auth = verifyUser(username, passwordHash);
   if (!auth.valid) {
     return { success: false, message: auth.message };
   }
 
-  var usersSheet = getUsersSheet();
-  var usersData = usersSheet.getDataRange().getValues();
-  var nameMap = {};
-  for (var u = 1; u < usersData.length; u++) {
-    nameMap[String(usersData[u][0])] = String(usersData[u][2]);
+  if (!groupId) {
+    return { success: false, message: 'Thiếu groupId' };
   }
 
-  var activeUsers = [];
-  for (var a = 1; a < usersData.length; a++) {
-    if (!usersData[a][0]) continue;
-    if (String(usersData[a][4]).toUpperCase() === 'TRUE') {
-      activeUsers.push({
-        username: String(usersData[a][0]),
-        fullName: String(usersData[a][2]),
-        role: String(usersData[a][3]).toUpperCase(),
-      });
-    }
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { success: false, message: 'Nhóm không tồn tại' };
   }
+
+  if (auth.user.role !== 'ADMIN') {
+    var groupAuth = verifyGroupMembership(username, groupId);
+    if (!groupAuth.valid) {
+      return { success: false, message: groupAuth.message };
+    }
+  } else if (!group.active) {
+    return { success: false, message: 'Nhóm đã bị khóa' };
+  }
+
+  var nameMap = getUserNameMap();
+  var activeUsers = getActiveUsersInGroup(groupId);
 
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var predictions = [];
 
   for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
+    if (!data[i][0] || String(data[i][0]) !== groupId) continue;
     predictions.push({
-      username: String(data[i][0]),
-      matchId: String(data[i][1]),
-      prediction: String(data[i][2]),
-      updatedAt: String(data[i][3]),
-      fullName: nameMap[String(data[i][0])] || String(data[i][0]),
+      username: String(data[i][1]),
+      matchId: String(data[i][2]),
+      prediction: String(data[i][3]),
+      updatedAt: String(data[i][4]),
+      fullName: nameMap[String(data[i][1])] || String(data[i][1]),
     });
   }
 
@@ -746,16 +1038,17 @@ function getActivePlayerUsernames() {
   return map;
 }
 
-function buildPredictionMapByMatch() {
+function buildPredictionMapByMatch(groupId) {
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var map = {};
 
   for (var i = 1; i < data.length; i++) {
-    if (!data[i][0] || !data[i][1]) continue;
-    var matchId = String(data[i][1]);
+    if (!data[i][0] || !data[i][2]) continue;
+    if (groupId && String(data[i][0]) !== groupId) continue;
+    var matchId = String(data[i][2]);
     if (!map[matchId]) map[matchId] = {};
-    map[matchId][String(data[i][0])] = String(data[i][2]).toUpperCase();
+    map[matchId][String(data[i][1])] = String(data[i][3]).toUpperCase();
   }
 
   return map;
@@ -775,35 +1068,43 @@ function getMissingPlayersForMatch(matchId, players, predictionMap) {
 }
 
 function handleGetMatchPredictionStats(payload) {
+  ensureGroupsSchema();
   var auth = verifyUser(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
   }
 
+  var groupId = sanitizeGroupId(payload.groupId);
   var matchId = String(payload.matchId || '');
-  if (!matchId) {
-    return { success: false, message: 'Thiếu matchId' };
+  if (!groupId || !matchId) {
+    return { success: false, message: 'Thiếu groupId hoặc matchId' };
   }
 
-  var players = getActivePlayers();
-  var playerSet = getActivePlayerUsernames();
+  var groupAuth = verifyGroupMembership(payload.username, groupId);
+  if (!groupAuth.valid) {
+    return { success: false, message: groupAuth.message };
+  }
+
+  var players = getActivePlayersInGroup(groupId);
+  var playerSet = getActivePlayerUsernamesInGroup(groupId);
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var counts = { home: 0, draw: 0, away: 0, total: 0 };
   var predictedUsers = {};
 
   for (var i = 1; i < data.length; i++) {
-    if (!data[i][0] || String(data[i][1]) !== matchId) continue;
-    if (!playerSet[String(data[i][0])]) continue;
+    if (!data[i][0] || String(data[i][0]) !== groupId) continue;
+    if (String(data[i][2]) !== matchId) continue;
+    if (!playerSet[String(data[i][1])]) continue;
 
-    var prediction = String(data[i][2]).toUpperCase();
+    var prediction = String(data[i][3]).toUpperCase();
     if (prediction === 'HOME') counts.home++;
     else if (prediction === 'DRAW') counts.draw++;
     else if (prediction === 'AWAY') counts.away++;
     else continue;
 
     counts.total++;
-    predictedUsers[String(data[i][0])] = true;
+    predictedUsers[String(data[i][1])] = true;
   }
 
   var notPredicted = players.filter(function (player) {
@@ -828,9 +1129,20 @@ function handleGetMatchPredictionStats(payload) {
 }
 
 function handleGetMissingPredictions(payload) {
+  ensureGroupsSchema();
   var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
   if (!auth.valid) {
     return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  if (!groupId) {
+    return { success: false, message: 'Thiếu groupId' };
+  }
+
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { success: false, message: 'Nhóm không tồn tại' };
   }
 
   var competition = String(payload.competition || DEFAULT_COMPETITION);
@@ -842,8 +1154,8 @@ function handleGetMissingPredictions(payload) {
       '/competitions/' + competition + '/matches?season=' + season
     );
     var matches = data.matches || [];
-    var players = getActivePlayers();
-    var predictionMap = buildPredictionMapByMatch();
+    var players = getActivePlayersInGroup(groupId);
+    var predictionMap = buildPredictionMapByMatch(groupId);
     var items = [];
 
     matches.forEach(function (match) {
@@ -984,6 +1296,193 @@ function handleToggleUserStatus(payload) {
     message: newActive === 'TRUE' ? 'Đã mở khóa user' : 'Đã khóa user',
     active: newActive === 'TRUE',
   };
+}
+
+function handleGetMyGroups(payload) {
+  ensureGroupsSchema();
+  var username = sanitizeUsername(payload.username);
+  var passwordHash = String(payload.passwordHash || '');
+
+  var auth = verifyUser(username, passwordHash);
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  return { success: true, groups: getGroupsForUser(username) };
+}
+
+function handleGetGroups(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var sheet = getGroupsSheet();
+  var data = sheet.getDataRange().getValues();
+  var groups = [];
+
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    var groupId = String(data[i][0]);
+    groups.push({
+      groupId: groupId,
+      name: String(data[i][1]),
+      active: String(data[i][2]).toUpperCase() === 'TRUE',
+      memberCount: countGroupMembers(groupId),
+      createdAt: String(data[i][3] || ''),
+    });
+  }
+
+  return { success: true, groups: groups };
+}
+
+function handleCreateGroup(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  var name = sanitizeText(payload.name, 100);
+
+  if (!groupId || !name) {
+    return { success: false, message: 'Thiếu groupId hoặc tên nhóm' };
+  }
+
+  if (getGroupById(groupId)) {
+    return { success: false, message: 'groupId đã tồn tại' };
+  }
+
+  getGroupsSheet().appendRow([groupId, name, 'TRUE', new Date().toISOString()]);
+
+  return { success: true, message: 'Đã tạo nhóm thành công', groupId: groupId, name: name };
+}
+
+function handleToggleGroupStatus(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  if (!groupId) {
+    return { success: false, message: 'Thiếu groupId' };
+  }
+
+  if (groupId === DEFAULT_GROUP_ID) {
+    return { success: false, message: 'Không thể khóa nhóm mặc định' };
+  }
+
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { success: false, message: 'Nhóm không tồn tại' };
+  }
+
+  var newActive = group.active ? 'FALSE' : 'TRUE';
+  getGroupsSheet().getRange(group.row, 3).setValue(newActive);
+
+  return {
+    success: true,
+    message: newActive === 'TRUE' ? 'Đã mở khóa nhóm' : 'Đã khóa nhóm',
+    active: newActive === 'TRUE',
+  };
+}
+
+function handleGetGroupMembers(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  if (!groupId) {
+    return { success: false, message: 'Thiếu groupId' };
+  }
+
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { success: false, message: 'Nhóm không tồn tại' };
+  }
+
+  var nameMap = getUserNameMap();
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+  var members = [];
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== groupId) continue;
+    var uname = String(data[i][1]);
+    members.push({
+      username: uname,
+      fullName: nameMap[uname] || uname,
+      joinedAt: String(data[i][2] || ''),
+    });
+  }
+
+  return { success: true, members: members, group: { groupId: group.groupId, name: group.name } };
+}
+
+function handleAddGroupMember(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  var targetUsername = sanitizeUsername(payload.targetUsername);
+
+  if (!groupId || !targetUsername) {
+    return { success: false, message: 'Thiếu groupId hoặc username' };
+  }
+
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { success: false, message: 'Nhóm không tồn tại' };
+  }
+
+  if (!getUserByUsername(targetUsername)) {
+    return { success: false, message: 'User không tồn tại' };
+  }
+
+  if (isUserInGroup(targetUsername, groupId)) {
+    return { success: false, message: 'User đã thuộc nhóm này' };
+  }
+
+  getGroupMembersSheet().appendRow([groupId, targetUsername, new Date().toISOString()]);
+
+  return { success: true, message: 'Đã thêm thành viên vào nhóm' };
+}
+
+function handleRemoveGroupMember(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  var targetUsername = sanitizeUsername(payload.targetUsername);
+
+  if (!groupId || !targetUsername) {
+    return { success: false, message: 'Thiếu groupId hoặc username' };
+  }
+
+  var sheet = getGroupMembersSheet();
+  var data = sheet.getDataRange().getValues();
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === groupId && String(data[i][1]) === targetUsername) {
+      sheet.deleteRow(i + 1);
+      return { success: true, message: 'Đã xóa thành viên khỏi nhóm' };
+    }
+  }
+
+  return { success: false, message: 'Thành viên không tồn tại trong nhóm' };
 }
 
 function sanitizeUsername(value) {

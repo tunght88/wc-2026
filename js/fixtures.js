@@ -1,10 +1,13 @@
-(function () {
-  const session = requireAuth();
+(async function () {
+  let session = requireAuth();
+  if (!session) return;
+  session = await initGroupContext(session);
   if (!session) return;
 
   renderNav('fixtures');
 
   let allMatches = [];
+  let pickStatsByMatch = {};
   let currentStage = 'all';
   let searchQuery = '';
 
@@ -43,6 +46,11 @@
       scoreHtml = '<div class="match-score">' + escapeHtml(score || 'Đang đấu') + '</div>';
     }
 
+    let pickRatesHtml = '';
+    if (match.status === 'FINISHED') {
+      pickRatesHtml = renderMatchPickRates(pickStatsByMatch[String(match.id)], match);
+    }
+
     return (
       '<div class="match-card">' +
         '<div class="match-header">' +
@@ -60,6 +68,7 @@
             '<span>' + escapeHtml(match.awayTeam.shortName || match.awayTeam.name) + '</span>' +
           '</div>' +
         '</div>' +
+        pickRatesHtml +
       '</div>'
     );
   }
@@ -86,9 +95,21 @@
     renderFilters();
 
     try {
-      allMatches = await getMatches();
+      const [matches, predResult] = await Promise.all([
+        getMatches(),
+        getPredictions(session.username, session.passwordHash, getCurrentGroupId()),
+      ]);
+
+      allMatches = matches;
+      pickStatsByMatch = buildAllMatchPickStats(
+        predResult.predictions || [],
+        predResult.activeUsers || []
+      );
       renderMatches();
-      initReminderBanner(session, { matches: allMatches });
+      initReminderBanner(session, {
+        matches: allMatches,
+        userPredMap: buildUserPredictionMap(predResult.predictions || [], session.username),
+      });
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải lịch thi đấu';
       errorBanner.classList.remove('hidden');

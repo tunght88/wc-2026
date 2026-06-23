@@ -1,5 +1,7 @@
-(function () {
-  const session = requireAuth();
+(async function () {
+  let session = requireAuth();
+  if (!session) return;
+  session = await initGroupContext(session);
   if (!session) return;
 
   renderNav('leaderboard');
@@ -104,7 +106,7 @@
     try {
       const [matches, predResult] = await Promise.all([
         getMatches(),
-        getPredictions(session.username, session.passwordHash),
+        getPredictions(session.username, session.passwordHash, getCurrentGroupId()),
       ]);
 
       const players = getActivePlayers(predResult.activeUsers || []);

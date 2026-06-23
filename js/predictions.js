@@ -1,5 +1,7 @@
-(function () {
-  const session = requireAuth();
+(async function () {
+  let session = requireAuth();
+  if (!session) return;
+  session = await initGroupContext(session);
   if (!session) return;
 
   renderNav('predictions');
@@ -9,6 +11,7 @@
   let userPredictions = {};
   let activePlayers = [];
   let predictionMapByMatch = {};
+  let pickStatsByMatch = {};
   let currentTimeFilter = 'upcoming-all';
   let currentPredFilter = 'all';
 
@@ -97,6 +100,11 @@
       scoreHtml = '<div class="match-score">' + escapeHtml(score || 'Đang đấu') + '</div>';
     }
 
+    let pickRatesHtml = '';
+    if (match.status === 'FINISHED') {
+      pickRatesHtml = renderMatchPickRates(pickStatsByMatch[String(match.id)], match);
+    }
+
     return (
       '<div class="match-card match-card-pred-' + resultStatus + (locked ? ' locked' : '') + '" data-match-id="' + escapeHtml(String(match.id)) + '">' +
         '<div class="match-header">' +
@@ -118,6 +126,7 @@
             '<span>' + escapeHtml(match.awayTeam.shortName || match.awayTeam.name) + '</span>' +
           '</div>' +
         '</div>' +
+        pickRatesHtml +
         '<div class="prediction-options">' +
           '<label class="prediction-option' + disabledClass + '">' +
             '<input type="radio" name="pred-' + match.id + '" value="HOME"' +
@@ -203,6 +212,7 @@
       await savePrediction(
         session.username,
         session.passwordHash,
+        getCurrentGroupId(),
         matchId,
         radio.value
       );
@@ -219,6 +229,7 @@
         matchId: matchId,
         prediction: radio.value,
       });
+      pickStatsByMatch = buildAllMatchPickStats(allPredictions, activePlayers);
       showToast('Đã lưu dự đoán', 'success');
       renderMatches();
       initReminderBanner(session, {
@@ -240,7 +251,7 @@
     try {
       const [matches, predResult] = await Promise.all([
         getMatches(),
-        getPredictions(session.username, session.passwordHash),
+        getPredictions(session.username, session.passwordHash, getCurrentGroupId()),
       ]);
 
       allMatches = matches;
@@ -255,6 +266,7 @@
           userPredictions[p.matchId] = p.prediction;
         }
       });
+      pickStatsByMatch = buildAllMatchPickStats(allPredictions, activePlayers);
 
       renderMatches();
       initReminderBanner(session, {

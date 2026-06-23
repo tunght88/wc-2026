@@ -39,6 +39,28 @@ function requireAuth(requiredRole) {
   return session;
 }
 
+function getCurrentGroupId() {
+  const session = getSession();
+  return session ? session.currentGroupId || null : null;
+}
+
+function setCurrentGroupId(groupId) {
+  const session = getSession();
+  if (!session) return;
+  session.currentGroupId = groupId;
+  saveSession(session);
+}
+
+function requireGroup(requiredRole) {
+  const session = requireAuth(requiredRole);
+  if (!session) return null;
+  if (!session.currentGroupId) {
+    window.location.href = getPagePath('no-group.html');
+    return null;
+  }
+  return session;
+}
+
 function getPagePath(page) {
   const path = window.location.pathname;
   if (path.includes('/pages/')) {
@@ -97,6 +119,10 @@ function renderNav(activePage) {
   const userInfo = document.getElementById('user-info');
   if (userInfo) {
     userInfo.textContent = session.fullName || session.username;
+  }
+
+  if (typeof renderGroupSwitcher === 'function') {
+    renderGroupSwitcher();
   }
 }
 
