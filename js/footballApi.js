@@ -55,6 +55,19 @@ function getFinishedMatchesWithResult(matches) {
   });
 }
 
+function isMatchEligibleForGroup(match, startDate) {
+  if (!startDate) return true;
+  if (!match || !match.utcDate) return true;
+  return String(match.utcDate).slice(0, 10) >= startDate;
+}
+
+function filterMatchesForGroup(matches, startDate) {
+  if (!startDate) return matches;
+  return matches.filter(function (m) {
+    return isMatchEligibleForGroup(m, startDate);
+  });
+}
+
 function buildPredictionMap(predictions) {
   const map = {};
   predictions.forEach(function (p) {
@@ -134,14 +147,16 @@ function createLeaderboardEntry(user) {
   };
 }
 
-function computeLeaderboard(activeUsers, predictions, matches) {
+function computeLeaderboard(activeUsers, predictions, matches, startDate) {
   const scores = {};
   activeUsers.forEach(function (user) {
     scores[user.username] = createLeaderboardEntry(user);
   });
 
   const predMap = buildPredictionMap(predictions);
-  const finishedMatches = getFinishedMatchesWithResult(matches);
+  const finishedMatches = getFinishedMatchesWithResult(
+    filterMatchesForGroup(matches, startDate)
+  );
 
   finishedMatches.forEach(function (match) {
     const matchId = String(match.id);
@@ -648,17 +663,18 @@ function buildUserPredictionMap(predictions, username) {
   return map;
 }
 
-function isMatchOpenForPrediction(match) {
+function isMatchOpenForPrediction(match, startDate) {
+  if (!isMatchEligibleForGroup(match, startDate)) return false;
   return match.status !== 'FINISHED' && !isMatchLocked(match.utcDate);
 }
 
-function getUpcomingUnpredicted(matches, userPredMap, hours) {
+function getUpcomingUnpredicted(matches, userPredMap, hours, startDate) {
   const now = Date.now();
   const limit = now + hours * 60 * 60 * 1000;
 
   return sortMatchesByDate(
     matches.filter(function (m) {
-      if (!isMatchOpenForPrediction(m)) return false;
+      if (!isMatchOpenForPrediction(m, startDate)) return false;
       if (userPredMap[String(m.id)]) return false;
       const kickoff = new Date(m.utcDate).getTime();
       return kickoff > now && kickoff <= limit;
@@ -666,10 +682,10 @@ function getUpcomingUnpredicted(matches, userPredMap, hours) {
   );
 }
 
-function getTodayUnpredicted(matches, userPredMap, now) {
+function getTodayUnpredicted(matches, userPredMap, now, startDate) {
   return sortMatchesByDate(
     matches.filter(function (m) {
-      if (!isMatchOpenForPrediction(m)) return false;
+      if (!isMatchOpenForPrediction(m, startDate)) return false;
       if (userPredMap[String(m.id)]) return false;
       return isInNoonDay(m.utcDate, now);
     })

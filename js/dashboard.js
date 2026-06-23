@@ -203,22 +203,25 @@
   }
 
   function refreshDashboard() {
+    const groupStart = getCurrentGroupStartDate();
+    const groupMatches = filterMatchesForGroup(allMatches, groupStart);
     const leaderboardRows = computeLeaderboard(
       activePlayers,
       allPredictions,
-      allMatches
+      allMatches,
+      groupStart
     );
     const achievements = computeUserAchievements(
       session.username,
       allPredictions,
-      allMatches,
+      groupMatches,
       activePlayers
     );
     const nextMatch = getNextUpcomingMatch(allMatches);
-    const urgent = getUpcomingUnpredicted(allMatches, userPredMap, 24);
+    const urgent = getUpcomingUnpredicted(allMatches, userPredMap, 24, groupStart);
     const quickMatches = sortMatchesByDate(
       allMatches.filter(function (m) {
-        return isMatchOpenForPrediction(m) && !userPredMap[String(m.id)];
+        return isMatchOpenForPrediction(m, groupStart) && !userPredMap[String(m.id)];
       })
     ).slice(0, 5);
 

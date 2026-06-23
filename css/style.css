@@ -554,6 +554,11 @@ body {
   box-shadow: 0 0 0 3px rgba(13, 92, 46, 0.15);
 }
 
+.form-input-sm {
+  max-width: 11rem;
+  padding: 0.35rem 0.5rem;
+}
+
 .login-container {
   min-height: 100vh;
   display: flex;

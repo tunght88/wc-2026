@@ -2,7 +2,7 @@ function renderReminderBanner(matches, userPredMap) {
   const banner = document.getElementById('reminder-banner');
   if (!banner) return;
 
-  const missing = getTodayUnpredicted(matches, userPredMap);
+  const missing = getTodayUnpredicted(matches, userPredMap, undefined, getCurrentGroupStartDate());
   if (!missing.length) {
     banner.classList.add('hidden');
     banner.innerHTML = '';

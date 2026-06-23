@@ -76,6 +76,8 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleCreateGroup(payload)));
       case 'toggleGroupStatus':
         return corsResponse(JSON.stringify(handleToggleGroupStatus(payload)));
+      case 'updateGroup':
+        return corsResponse(JSON.stringify(handleUpdateGroup(payload)));
       case 'getGroupMembers':
         return corsResponse(JSON.stringify(handleGetGroupMembers(payload)));
       case 'addGroupMember':
@@ -121,12 +123,37 @@ function ensureGroupsSheet() {
   if (!sheet) {
     sheet = ss.insertSheet(GROUPS_SHEET);
     sheet
-      .getRange(1, 1, 1, 4)
-      .setValues([['group_id', 'name', 'active', 'created_at']])
+      .getRange(1, 1, 1, 5)
+      .setValues([['group_id', 'name', 'active', 'created_at', 'start_date']])
       .setFontWeight('bold');
     sheet.setFrozenRows(1);
   }
+  ensureGroupsStartDateColumn();
   return sheet;
+}
+
+function ensureGroupsStartDateColumn() {
+  var sheet = getSpreadsheet().getSheetByName(GROUPS_SHEET);
+  if (!sheet) return;
+  if (sheet.getLastRow() === 0) {
+    sheet
+      .getRange(1, 1, 1, 5)
+      .setValues([['group_id', 'name', 'active', 'created_at', 'start_date']])
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    return;
+  }
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var hasStartDate = false;
+  for (var c = 0; c < header.length; c++) {
+    if (String(header[c]).toLowerCase() === 'start_date') {
+      hasStartDate = true;
+      break;
+    }
+  }
+  if (!hasStartDate) {
+    sheet.getRange(1, 5).setValue('start_date').setFontWeight('bold');
+  }
 }
 
 function ensureGroupMembersSheet() {
@@ -209,7 +236,13 @@ function ensureDefaultGroup() {
   var defaultGroup = findDefaultGroupRow();
 
   if (!defaultGroup) {
-    groupsSheet.appendRow([DEFAULT_GROUP_ID, DEFAULT_GROUP_NAME, 'TRUE', new Date().toISOString()]);
+    groupsSheet.appendRow([
+      DEFAULT_GROUP_ID,
+      DEFAULT_GROUP_NAME,
+      'TRUE',
+      new Date().toISOString(),
+      '',
+    ]);
     defaultGroup = findDefaultGroupRow();
   }
 
@@ -246,6 +279,7 @@ function ensureRegistrationGroup() {
       REGISTRATION_GROUP_NAME,
       'TRUE',
       new Date().toISOString(),
+      '',
     ]);
   }
 }
@@ -283,18 +317,45 @@ function groupIdsMatch(a, b) {
   return sanitizeGroupId(a) === sanitizeGroupId(b);
 }
 
+function normalizeGroupStartDate(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  var str = String(value).trim();
+  if (!str) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  var parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return '';
+}
+
+function mapGroupFromRow(data, rowIndex) {
+  return {
+    groupId: String(data[0]),
+    name: String(data[1]),
+    active: String(data[2]).toUpperCase() === 'TRUE',
+    createdAt: String(data[3] || ''),
+    startDate: normalizeGroupStartDate(data[4]),
+    row: rowIndex + 1,
+  };
+}
+
+function isMatchOnOrAfterGroupStart(match, startDate) {
+  if (!startDate) return true;
+  if (!match || !match.utcDate) return true;
+  return String(match.utcDate).slice(0, 10) >= startDate;
+}
+
 function findDefaultGroupRow() {
   var sheet = getGroupsSheet();
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     if (groupIdsMatch(data[i][0], DEFAULT_GROUP_ID)) {
-      return {
-        groupId: String(data[i][0]),
-        name: String(data[i][1]),
-        active: String(data[i][2]).toUpperCase() === 'TRUE',
-        row: i + 1,
-      };
+      return mapGroupFromRow(data[i], i);
     }
   }
   return null;
@@ -306,12 +367,7 @@ function getGroupById(groupId) {
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     if (groupIdsMatch(data[i][0], groupId)) {
-      return {
-        groupId: String(data[i][0]),
-        name: String(data[i][1]),
-        active: String(data[i][2]).toUpperCase() === 'TRUE',
-        row: i + 1,
-      };
+      return mapGroupFromRow(data[i], i);
     }
   }
   return null;
@@ -418,7 +474,11 @@ function getGroupsForUser(username) {
   groupIds.forEach(function (groupId) {
     var group = getGroupById(groupId);
     if (group && group.active) {
-      groups.push({ groupId: group.groupId, name: group.name });
+      groups.push({
+        groupId: group.groupId,
+        name: group.name,
+        startDate: group.startDate || '',
+      });
     }
   });
   return groups;
@@ -1015,6 +1075,10 @@ function handleSavePrediction(payload) {
     return { success: false, message: 'Nhóm không tồn tại' };
   }
 
+  if (!isMatchOnOrAfterGroupStart(match, canonicalGroup.startDate)) {
+    return { success: false, message: 'Trận đấu trước ngày bắt đầu của nhóm' };
+  }
+
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var now = new Date().toISOString();
@@ -1240,6 +1304,7 @@ function handleGetMissingPredictions(payload) {
     matches.forEach(function (match) {
       var status = String(match.status || '');
       if (onlyUpcoming && status === 'FINISHED') return;
+      if (!isMatchOnOrAfterGroupStart(match, group.startDate)) return;
 
       var matchId = String(match.id);
       var missing = getMissingPlayersForMatch(matchId, players, predictionMap);
@@ -1410,6 +1475,7 @@ function handleGetGroups(payload) {
       active: String(data[i][2]).toUpperCase() === 'TRUE',
       memberCount: countGroupMembers(groupId),
       createdAt: String(data[i][3] || ''),
+      startDate: normalizeGroupStartDate(data[i][4]),
     });
   }
 
@@ -1425,6 +1491,7 @@ function handleCreateGroup(payload) {
 
   var groupId = sanitizeGroupId(payload.groupId);
   var name = sanitizeText(payload.name, 100);
+  var startDate = normalizeGroupStartDate(payload.startDate);
 
   if (!groupId || !name) {
     return { success: false, message: 'Thiếu groupId hoặc tên nhóm' };
@@ -1434,9 +1501,57 @@ function handleCreateGroup(payload) {
     return { success: false, message: 'groupId đã tồn tại' };
   }
 
-  getGroupsSheet().appendRow([groupId, name, 'TRUE', new Date().toISOString()]);
+  getGroupsSheet().appendRow([groupId, name, 'TRUE', new Date().toISOString(), startDate]);
 
-  return { success: true, message: 'Đã tạo nhóm thành công', groupId: groupId, name: name };
+  return {
+    success: true,
+    message: 'Đã tạo nhóm thành công',
+    groupId: groupId,
+    name: name,
+    startDate: startDate,
+  };
+}
+
+function handleUpdateGroup(payload) {
+  ensureGroupsSchema();
+  var auth = verifyAdmin(payload.username, String(payload.passwordHash || ''));
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupId = sanitizeGroupId(payload.groupId);
+  if (!groupId) {
+    return { success: false, message: 'Thiếu groupId' };
+  }
+
+  var group = getGroupById(groupId);
+  if (!group) {
+    return { success: false, message: 'Nhóm không tồn tại' };
+  }
+
+  var name = payload.name !== undefined ? sanitizeText(payload.name, 100) : group.name;
+  var startDate =
+    payload.startDate !== undefined
+      ? normalizeGroupStartDate(payload.startDate)
+      : group.startDate;
+
+  if (!name) {
+    return { success: false, message: 'Tên nhóm không hợp lệ' };
+  }
+
+  getGroupsSheet().getRange(group.row, 2).setValue(name);
+  getGroupsSheet().getRange(group.row, 5).setValue(startDate);
+
+  return {
+    success: true,
+    message: 'Đã cập nhật nhóm',
+    group: {
+      groupId: group.groupId,
+      name: name,
+      startDate: startDate,
+      active: group.active,
+    },
+  };
 }
 
 function handleToggleGroupStatus(payload) {

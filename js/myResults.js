@@ -107,6 +107,7 @@
         matchMap[String(m.id)] = m;
       });
 
+      const groupMatches = filterMatchesForGroup(matches, getCurrentGroupStartDate());
       const predictions = predResult.predictions || [];
       const players = getActivePlayers(predResult.activeUsers || []);
       const myPreds = predictions.filter(function (p) {
@@ -116,7 +117,7 @@
       const achievements = computeUserAchievements(
         session.username,
         predictions,
-        matches,
+        groupMatches,
         players
       );
       renderAchievementsPanel(achievements);
@@ -129,7 +130,7 @@
         myPredMap[String(pred.matchId)] = pred.prediction;
       });
 
-      getFinishedMatchesWithResult(matches).forEach(function (match) {
+      getFinishedMatchesWithResult(groupMatches).forEach(function (match) {
         const matchId = String(match.id);
         const prediction = myPredMap[matchId];
         const penalty = getStagePenalty(match.stage);

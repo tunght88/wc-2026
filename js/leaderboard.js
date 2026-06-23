@@ -43,6 +43,7 @@
   }
 
   function renderLeaderboard(rows, predictions, matches, players) {
+    const groupMatches = filterMatchesForGroup(matches, getCurrentGroupStartDate());
     if (rows.length === 0) {
       leaderboardContainer.innerHTML =
         renderPenaltyLegend() +
@@ -78,7 +79,7 @@
       const achievements = computeUserAchievements(
         row.username,
         predictions,
-        matches,
+        groupMatches,
         players
       );
 
@@ -112,7 +113,12 @@
       const players = getActivePlayers(predResult.activeUsers || []);
       const predictions = predResult.predictions || [];
 
-      const rows = computeLeaderboard(players, predictions, matches);
+      const rows = computeLeaderboard(
+        players,
+        predictions,
+        matches,
+        getCurrentGroupStartDate()
+      );
 
       renderLeaderboard(rows, predictions, matches, players);
       initReminderBanner(session, {

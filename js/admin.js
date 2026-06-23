@@ -61,6 +61,7 @@
           '<thead><tr>' +
             '<th>Group ID</th>' +
             '<th>Tên nhóm</th>' +
+            '<th>Ngày bắt đầu</th>' +
             '<th>Thành viên</th>' +
             '<th>Trạng thái</th>' +
             '<th>Thao tác</th>' +
@@ -76,6 +77,11 @@
         '<tr>' +
           '<td>' + escapeHtml(group.groupId) + '</td>' +
           '<td>' + escapeHtml(group.name) + '</td>' +
+          '<td>' +
+            '<input type="date" class="form-input form-input-sm group-start-date-input" ' +
+            'data-group-id="' + escapeHtml(group.groupId) + '" ' +
+            'value="' + escapeHtml(group.startDate || '') + '">' +
+          '</td>' +
           '<td>' + escapeHtml(String(group.memberCount || 0)) + '</td>' +
           '<td>' + statusBadge + '</td>' +
           '<td class="admin-actions">' +
@@ -95,6 +101,26 @@
     groupsTable.querySelectorAll('.btn-toggle-group').forEach(function (btn) {
       btn.addEventListener('click', handleToggleGroupStatus);
     });
+
+    groupsTable.querySelectorAll('.group-start-date-input').forEach(function (input) {
+      input.addEventListener('change', handleUpdateGroupStartDate);
+    });
+  }
+
+  async function handleUpdateGroupStartDate(e) {
+    const groupId = e.target.dataset.groupId;
+    const startDate = e.target.value;
+
+    try {
+      await updateGroup(session.username, session.passwordHash, groupId, {
+        startDate: startDate,
+      });
+      showToast('Đã cập nhật ngày bắt đầu nhóm', 'success');
+      await loadGroups();
+    } catch (err) {
+      showToast(err.message || 'Cập nhật thất bại', 'error');
+      await loadGroups();
+    }
   }
 
   function renderGroupMembersTable() {
@@ -199,6 +225,7 @@
 
     const groupId = document.getElementById('new-group-id').value.trim().toLowerCase();
     const name = document.getElementById('new-group-name').value.trim();
+    const startDate = document.getElementById('new-group-start-date').value;
 
     if (!groupId || !name) {
       showToast('Vui lòng nhập đầy đủ thông tin nhóm', 'error');
@@ -206,7 +233,7 @@
     }
 
     try {
-      await createGroup(session.username, session.passwordHash, groupId, name);
+      await createGroup(session.username, session.passwordHash, groupId, name, startDate);
       showToast('Đã tạo nhóm thành công', 'success');
       createGroupForm.reset();
       selectedGroupId = groupId;

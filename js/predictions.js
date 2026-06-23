@@ -71,13 +71,17 @@
   }
 
   function renderMatchCard(match) {
-    const locked = isMatchLocked(match.utcDate);
+    const groupStartDate = getCurrentGroupStartDate();
+    const beforeGroupStart = !isMatchEligibleForGroup(match, groupStartDate);
+    const locked = isMatchLocked(match.utcDate) || beforeGroupStart;
     const existing = userPredictions[String(match.id)] || '';
     const resultStatus = getPredictionResultStatus(match, existing);
     const stageLabel = getStageLabel(match.stage);
     const disabledClass = locked ? ' disabled' : '';
     const score = getMatchScore(match);
-    const lockedBadge = locked
+    const lockedBadge = beforeGroupStart
+      ? '<span class="badge badge-locked">Trước ngày bắt đầu nhóm</span>'
+      : locked
       ? '<span class="badge badge-locked">Đã khóa dự đoán</span>'
       : '<span class="badge badge-countdown" data-kickoff="' + escapeHtml(match.utcDate) + '">' +
           escapeHtml(formatLockCountdown(match.utcDate)) +

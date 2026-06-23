@@ -44,6 +44,24 @@ function getCurrentGroupName(session) {
   return current ? current.name : session.currentGroupId || '';
 }
 
+function getCurrentGroupStartDate() {
+  const session = getSession();
+  if (!session || !session.groups) return '';
+  const current = session.groups.find(function (g) {
+    return g.groupId === session.currentGroupId;
+  });
+  return current && current.startDate ? current.startDate : '';
+}
+
+function formatGroupStartDate(startDate) {
+  if (!startDate) return '';
+  try {
+    return new Date(startDate + 'T00:00:00').toLocaleDateString('vi-VN');
+  } catch {
+    return startDate;
+  }
+}
+
 function renderGroupSwitcher() {
   const session = getSession();
   if (!session || !session.groups || session.groups.length === 0) return;
@@ -65,9 +83,14 @@ function renderGroupSwitcher() {
   }
 
   if (session.groups.length === 1) {
+    const startLabel = getCurrentGroupStartDate()
+      ? ' · từ ' + formatGroupStartDate(getCurrentGroupStartDate())
+      : '';
     switcher.innerHTML =
       '<span class="group-switcher-label">Nhóm:</span>' +
-      '<span class="group-switcher-current">' + escapeHtml(getCurrentGroupName(session)) + '</span>';
+      '<span class="group-switcher-current">' +
+      escapeHtml(getCurrentGroupName(session) + startLabel) +
+      '</span>';
     return;
   }
 

@@ -54,12 +54,23 @@ async function getGroups(adminUsername, adminPasswordHash) {
   return postAction('getGroups', { username: adminUsername, passwordHash: adminPasswordHash });
 }
 
-async function createGroup(adminUsername, adminPasswordHash, groupId, name) {
+async function createGroup(adminUsername, adminPasswordHash, groupId, name, startDate) {
   return postAction('createGroup', {
     username: adminUsername,
     passwordHash: adminPasswordHash,
     groupId,
     name,
+    startDate: startDate || '',
+  });
+}
+
+async function updateGroup(adminUsername, adminPasswordHash, groupId, updates) {
+  return postAction('updateGroup', {
+    username: adminUsername,
+    passwordHash: adminPasswordHash,
+    groupId,
+    name: updates.name,
+    startDate: updates.startDate,
   });
 }
 
