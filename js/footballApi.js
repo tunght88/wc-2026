@@ -55,10 +55,21 @@ function getFinishedMatchesWithResult(matches) {
   });
 }
 
+const GROUP_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+function getMatchDateInGroupTimezone(utcDate) {
+  if (!utcDate) return '';
+  try {
+    return new Date(utcDate).toLocaleDateString('en-CA', { timeZone: GROUP_TIMEZONE });
+  } catch {
+    return String(utcDate).slice(0, 10);
+  }
+}
+
 function isMatchEligibleForGroup(match, startDate) {
   if (!startDate) return true;
   if (!match || !match.utcDate) return true;
-  return String(match.utcDate).slice(0, 10) >= startDate;
+  return getMatchDateInGroupTimezone(match.utcDate) >= startDate;
 }
 
 function filterMatchesForGroup(matches, startDate) {

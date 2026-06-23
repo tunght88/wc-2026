@@ -1,4 +1,4 @@
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE';
+const SPREADSHEET_ID = '11U05dXHIZwBw81vqCtcz6HTvGlBzDqs351EzdQ17kVU';
 const USERS_SHEET = 'Users';
 const PREDICTIONS_SHEET = 'Predictions';
 const GROUPS_SHEET = 'Groups';
@@ -11,6 +11,7 @@ const DEFAULT_GROUP_ID = 'group1';
 const DEFAULT_GROUP_NAME = 'Nhóm 8 9l';
 const REGISTRATION_GROUP_ID = 'group2';
 const REGISTRATION_GROUP_NAME = 'Group 2';
+const APP_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 function doGet(e) {
   return handleRequest(e);
@@ -320,14 +321,14 @@ function groupIdsMatch(a, b) {
 function normalizeGroupStartDate(value) {
   if (value === null || value === undefined || value === '') return '';
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return Utilities.formatDate(value, APP_TIMEZONE, 'yyyy-MM-dd');
   }
   var str = String(value).trim();
   if (!str) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
   var parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
-    return Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return Utilities.formatDate(parsed, APP_TIMEZONE, 'yyyy-MM-dd');
   }
   return '';
 }
@@ -343,10 +344,21 @@ function mapGroupFromRow(data, rowIndex) {
   };
 }
 
+function getMatchDateInAppTimezone(utcDateIso) {
+  if (!utcDateIso) return '';
+  try {
+    var d = new Date(utcDateIso);
+    if (isNaN(d.getTime())) return '';
+    return Utilities.formatDate(d, APP_TIMEZONE, 'yyyy-MM-dd');
+  } catch (err) {
+    return '';
+  }
+}
+
 function isMatchOnOrAfterGroupStart(match, startDate) {
   if (!startDate) return true;
   if (!match || !match.utcDate) return true;
-  return String(match.utcDate).slice(0, 10) >= startDate;
+  return getMatchDateInAppTimezone(match.utcDate) >= startDate;
 }
 
 function findDefaultGroupRow() {
