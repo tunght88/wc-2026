@@ -587,12 +587,24 @@ function buildMatchPickCounts(matchId, predMap, players) {
 }
 
 function isMinorityPick(counts, prediction) {
-  if (!counts || counts.total < 2 || !prediction) return false;
+  if (!counts || counts.total < 3 || !prediction) return false;
   const pick = String(prediction).toUpperCase();
-  if (!counts[pick]) return false;
+  const pickCount = counts[pick];
+  if (!pickCount) return false;
 
-  const maxCount = Math.max(counts.HOME, counts.DRAW, counts.AWAY);
-  return counts[pick] < maxCount;
+  const home = counts.HOME;
+  const draw = counts.DRAW;
+  const away = counts.AWAY;
+  const maxCount = Math.max(home, draw, away);
+  const minCount = Math.min(home, draw, away);
+
+  if (pickCount >= maxCount || minCount >= maxCount) return false;
+
+  const tiedAtMin = [home, draw, away].filter(function (c) {
+    return c === minCount;
+  }).length;
+
+  return pickCount === minCount && tiedAtMin === 1;
 }
 
 function computeMatchPickStats(matchId, predMap, players) {

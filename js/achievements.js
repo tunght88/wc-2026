@@ -4,7 +4,7 @@ const ACHIEVEMENT_DEFS = {
   contrarian: {
     id: 'contrarian',
     label: 'Ngược đám đông',
-    title: 'Dự đoán đúng kết quả không được nhiều người chọn (hôm nay + hôm qua, 12h–12h)',
+    title: 'Dự đoán đúng kết quả ít người chọn nhất (hôm nay + hôm qua, 12h–12h)',
   },
   'knockout-king': { id: 'knockout-king', label: 'Vua knock-out', title: 'Nhiều dự đoán đúng nhất ở vòng knock-out' },
 };
