@@ -878,6 +878,7 @@ function handleSavePrediction(payload) {
   var groupId = sanitizeGroupId(payload.groupId);
   var matchId = String(payload.matchId || '');
   var prediction = String(payload.prediction || '').toUpperCase();
+  var hopeStar = payload.hopeStar === true || String(payload.hopeStar || '').toUpperCase() === 'TRUE';
 
   if (!username || !passwordHash || !groupId || !matchId || !prediction) {
     return { success: false, message: 'Thiếu thông tin dự đoán' };
@@ -917,10 +918,31 @@ function handleSavePrediction(payload) {
     return { success: false, message: 'Trận đấu trước ngày bắt đầu của nhóm' };
   }
 
+  var hopeStarRound = '';
+  if (hopeStar) {
+    hopeStarRound = getHopeStarRoundKey(match.stage);
+    if (!hopeStarRound) {
+      return { success: false, message: 'Ngôi sao hy vọng chỉ áp dụng từ vòng 32 đội trở đi' };
+    }
+  }
+
   var sheet = getPredictionsSheet();
   var data = sheet.getDataRange().getValues();
   var now = new Date().toISOString();
   var foundRow = -1;
+
+  if (hopeStar && hopeStarRound) {
+    for (var j = 1; j < data.length; j++) {
+      if (!groupIdsMatch(data[j][0], canonicalGroup.groupId)) continue;
+      if (String(data[j][1]) !== username) continue;
+      if (String(data[j][2]) === matchId) continue;
+      if (String(data[j][6] || '').toUpperCase() !== 'TRUE') continue;
+      if (String(data[j][7] || '') === hopeStarRound) {
+        sheet.getRange(j + 1, 7).setValue('');
+        sheet.getRange(j + 1, 8).setValue('');
+      }
+    }
+  }
 
   for (var i = 1; i < data.length; i++) {
     if (
@@ -936,11 +958,36 @@ function handleSavePrediction(payload) {
   if (foundRow > 0) {
     sheet.getRange(foundRow, 4).setValue(prediction);
     sheet.getRange(foundRow, 5).setValue(now);
+    sheet.getRange(foundRow, 7).setValue(hopeStar ? 'TRUE' : '');
+    sheet.getRange(foundRow, 8).setValue(hopeStar ? hopeStarRound : '');
   } else {
-    sheet.appendRow([canonicalGroup.groupId, username, matchId, prediction, now]);
+    sheet.appendRow([
+      canonicalGroup.groupId,
+      username,
+      matchId,
+      prediction,
+      now,
+      '',
+      hopeStar ? 'TRUE' : '',
+      hopeStar ? hopeStarRound : '',
+    ]);
   }
 
   return { success: true, message: 'Đã lưu dự đoán' };
+}
+
+function getHopeStarRoundKey(stage) {
+  var keys = {
+    LAST_32: 'r32',
+    ROUND_OF_32: 'r32',
+    LAST_16: 'r16',
+    ROUND_OF_16: 'r16',
+    QUARTER_FINALS: 'qf',
+    SEMI_FINALS: 'sf',
+    THIRD_PLACE: 'third',
+    FINAL: 'final',
+  };
+  return keys[stage] || '';
 }
 
 function handleGetPredictions(payload) {
@@ -985,6 +1032,7 @@ function handleGetPredictions(payload) {
       matchId: String(data[i][2]),
       prediction: String(data[i][3]),
       updatedAt: String(data[i][4]),
+      hopeStar: String(data[i][6] || '').toUpperCase() === 'TRUE',
       fullName: nameMap[String(data[i][1])] || String(data[i][1]),
     });
   }

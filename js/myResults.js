@@ -126,14 +126,18 @@
       const rows = [];
       const myPredMap = {};
 
+      const myPredDetailMap = {};
+
       myPreds.forEach(function (pred) {
         myPredMap[String(pred.matchId)] = pred.prediction;
+        myPredDetailMap[String(pred.matchId)] = pred;
       });
 
       getFinishedMatchesWithResult(groupMatches).forEach(function (match) {
         const matchId = String(match.id);
         const prediction = myPredMap[matchId];
-        const penalty = getStagePenalty(match.stage);
+        const hopeStar = myPredDetailMap[matchId] && isHopeStarActive(myPredDetailMap[matchId].hopeStar);
+        const penalty = computeMatchPenaltyPoints(match, prediction, hopeStar);
 
         stats.finished++;
         if (!prediction) {
@@ -143,6 +147,7 @@
           const actual = getActualResult(match);
           if (prediction === actual) {
             stats.correct++;
+            if (hopeStar) stats.penalties += penalty;
           } else {
             stats.wrong++;
             stats.penalties += penalty;
@@ -155,20 +160,22 @@
         if (!match) return;
 
         const actual = getActualResult(match);
-        const myLabel = getPredictionLabel(pred.prediction, match);
+        const hopeStar = isHopeStarActive(pred.hopeStar);
+        const myLabel = getPredictionLabel(pred.prediction, match) +
+          (hopeStar ? ' ⭐' : '');
         let actualLabel = 'Chưa có kết quả';
         let resultBadge = '<span class="badge badge-pending">Chờ kết quả</span>';
         let penaltyLabel = '-';
 
         if (actual) {
           actualLabel = getPredictionLabel(actual, match);
-          const penalty = getStagePenalty(match.stage);
+          const penalty = computeMatchPenaltyPoints(match, pred.prediction, hopeStar);
           if (pred.prediction === actual) {
             resultBadge = '<span class="badge badge-correct">✓ Đúng</span>';
-            penaltyLabel = '0';
+            penaltyLabel = formatPenaltyLabel(penalty);
           } else {
             resultBadge = '<span class="badge badge-wrong">✗ Sai</span>';
-            penaltyLabel = '+' + penalty;
+            penaltyLabel = formatPenaltyLabel(penalty);
           }
         }
 

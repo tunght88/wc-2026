@@ -9,6 +9,8 @@
   let allMatches = [];
   let allPredictions = [];
   let userPredictions = {};
+  let userHopeStars = {};
+  let userHopeStarByMatch = {};
   let activePlayers = [];
   let predictionMapByMatch = {};
   let pickStatsByMatch = {};
@@ -70,6 +72,34 @@
     return sortMatchesByDate(filtered);
   }
 
+  function rebuildHopeStarState() {
+    userHopeStars = buildHopeStarUsageMap(allPredictions, session.username, allMatches);
+    userHopeStarByMatch = buildHopeStarByMatchMap(allPredictions, session.username);
+  }
+
+  function renderHopeStarLegend() {
+    const rounds = Object.keys(HOPE_STAR_ROUND_LABELS);
+    let items = rounds.map(function (roundKey) {
+      const used = !!userHopeStars[roundKey];
+      const cls = used ? 'hope-star-legend-used' : 'hope-star-legend-available';
+      const status = used ? 'đã dùng' : 'còn trống';
+      return (
+        '<span class="hope-star-legend-item ' + cls + '">' +
+          '⭐ ' + escapeHtml(HOPE_STAR_ROUND_LABELS[roundKey]) + ': ' + status +
+        '</span>'
+      );
+    }).join('');
+
+    return (
+      '<div class="hope-star-legend wc-card">' +
+        '<div class="hope-star-legend-title">⭐ Ngôi sao hy vọng</div>' +
+        '<p class="hope-star-legend-desc">Từ vòng 32 đội, mỗi vòng được chọn <strong>1 trận</strong>. ' +
+        'Đúng: <strong>−×2 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
+        '<div class="hope-star-legend-rounds">' + items + '</div>' +
+      '</div>'
+    );
+  }
+
   function renderMatchCard(match) {
     const groupStartDate = getCurrentGroupStartDate();
     const beforeGroupStart = !isMatchEligibleForGroup(match, groupStartDate);
@@ -109,8 +139,30 @@
       pickRatesHtml = renderMatchPickRates(pickStatsByMatch[String(match.id)], match);
     }
 
+    const matchIdStr = String(match.id);
+    const hopeStarEligible = isHopeStarEligible(match.stage) && !beforeGroupStart;
+    const roundKey = getHopeStarRoundKey(match.stage);
+    const hasHopeStar = !!userHopeStarByMatch[matchIdStr];
+    const hopeStarUsedElsewhere =
+      roundKey && userHopeStars[roundKey] && userHopeStars[roundKey] !== matchIdStr;
+    const hopeStarDisabled = locked || (hopeStarUsedElsewhere && !hasHopeStar);
+
+    let hopeStarHtml = '';
+    if (hopeStarEligible) {
+      hopeStarHtml =
+        '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '">' +
+          '<input type="checkbox" class="hope-star-checkbox" data-match-id="' + escapeHtml(matchIdStr) + '"' +
+            (hasHopeStar ? ' checked' : '') +
+            (hopeStarDisabled ? ' disabled' : '') + '>' +
+          '<span class="hope-star-label">⭐ Ngôi sao hy vọng</span>' +
+          (hopeStarUsedElsewhere && !hasHopeStar
+            ? '<span class="hope-star-hint">(đã dùng ở vòng ' + escapeHtml(HOPE_STAR_ROUND_LABELS[roundKey] || '') + ')</span>'
+            : '') +
+        '</label>';
+    }
+
     return (
-      '<div class="match-card match-card-pred-' + resultStatus + (locked ? ' locked' : '') + '" data-match-id="' + escapeHtml(String(match.id)) + '">' +
+      '<div class="match-card match-card-pred-' + resultStatus + (locked ? ' locked' : '') + (hasHopeStar ? ' has-hope-star' : '') + '" data-match-id="' + escapeHtml(matchIdStr) + '">' +
         '<div class="match-header">' +
           '<span>' + escapeHtml(formatMatchDate(match.utcDate)) + ' · ' + escapeHtml(formatMatchTime(match.utcDate)) + '</span>' +
           '<span class="match-header-badges">' +
@@ -151,6 +203,7 @@
             '<span>' + escapeHtml(match.awayTeam.shortName || match.awayTeam.name) + ' thắng</span>' +
           '</label>' +
         '</div>' +
+        hopeStarHtml +
         '<div class="flex items-center gap-2 flex-wrap">' +
           lockedBadge +
           '<button type="button" class="btn btn-primary btn-save-prediction"' +
@@ -173,6 +226,11 @@
           '<p>Không tìm thấy trận đấu nào</p>' +
         '</div>';
       return;
+    }
+
+    const legend = document.getElementById('hope-star-legend');
+    if (legend) {
+      legend.innerHTML = renderHopeStarLegend();
     }
 
     matchesContainer.innerHTML = sorted.map(renderMatchCard).join('');
@@ -208,6 +266,11 @@
       return;
     }
 
+    const hopeStarCheckbox = document.querySelector(
+      '.hope-star-checkbox[data-match-id="' + matchId + '"]'
+    );
+    const hopeStar = hopeStarCheckbox ? hopeStarCheckbox.checked : false;
+
     const btn = e.target;
     btn.disabled = true;
     btn.textContent = 'Đang lưu...';
@@ -218,7 +281,8 @@
         session.passwordHash,
         getCurrentGroupId(),
         matchId,
-        radio.value
+        radio.value,
+        hopeStar
       );
       userPredictions[matchId] = radio.value;
       if (!predictionMapByMatch[matchId]) {
@@ -228,11 +292,30 @@
       allPredictions = allPredictions.filter(function (p) {
         return !(p.username === session.username && String(p.matchId) === String(matchId));
       });
+      if (hopeStar) {
+        const savedMatch = allMatches.find(function (m) {
+          return String(m.id) === String(matchId);
+        });
+        const savedRoundKey = savedMatch ? getHopeStarRoundKey(savedMatch.stage) : null;
+        if (savedRoundKey) {
+          allPredictions.forEach(function (p) {
+            if (p.username !== session.username || !isHopeStarActive(p.hopeStar)) return;
+            const otherMatch = allMatches.find(function (m) {
+              return String(m.id) === String(p.matchId);
+            });
+            if (otherMatch && getHopeStarRoundKey(otherMatch.stage) === savedRoundKey) {
+              p.hopeStar = false;
+            }
+          });
+        }
+      }
       allPredictions.push({
         username: session.username,
         matchId: matchId,
         prediction: radio.value,
+        hopeStar: hopeStar,
       });
+      rebuildHopeStarState();
       pickStatsByMatch = buildAllMatchPickStats(allPredictions, activePlayers);
       showToast('Đã lưu dự đoán', 'success');
       renderMatches();
@@ -270,6 +353,7 @@
           userPredictions[p.matchId] = p.prediction;
         }
       });
+      rebuildHopeStarState();
       pickStatsByMatch = buildAllMatchPickStats(allPredictions, activePlayers);
 
       renderMatches();

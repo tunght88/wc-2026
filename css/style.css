@@ -350,6 +350,95 @@ body {
   accent-color: var(--wc-green);
 }
 
+.hope-star-legend {
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fcd34d;
+}
+
+.hope-star-legend-title {
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 0.35rem;
+}
+
+.hope-star-legend-desc {
+  font-size: 0.875rem;
+  color: #78350f;
+  margin-bottom: 0.75rem;
+}
+
+.hope-star-legend-rounds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hope-star-legend-item {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.hope-star-legend-used {
+  opacity: 0.75;
+  text-decoration: line-through;
+}
+
+.hope-star-legend-available {
+  font-weight: 600;
+}
+
+.hope-star-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef9c3 100%);
+  border: 1px solid #fcd34d;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.hope-star-option:hover:not(.disabled) {
+  border-color: #f59e0b;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2);
+}
+
+.hope-star-option.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hope-star-label {
+  font-weight: 600;
+  color: #92400e;
+}
+
+.hope-star-hint {
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+.match-card.has-hope-star {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+}
+
+.hope-star-legend-inline {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  background: #fffbeb;
+  border-radius: 8px;
+  border: 1px solid #fde68a;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
