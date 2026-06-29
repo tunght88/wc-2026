@@ -149,17 +149,18 @@
 
     let hopeStarHtml = '';
     if (hopeStarEligible) {
+      const hopeStarTitle = hopeStarUsedElsewhere && !hasHopeStar
+        ? 'Đã dùng ngôi sao hy vọng ở vòng ' + (HOPE_STAR_ROUND_LABELS[roundKey] || '')
+        : 'Ngôi sao hy vọng — đúng: −×2 điểm phạt, sai: +×2 điểm phạt';
       hopeStarHtml =
-        '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '">' +
+        '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '"' +
+          ' title="' + escapeHtml(hopeStarTitle) + '">' +
           '<input type="checkbox" class="hope-star-checkbox" data-match-id="' + escapeHtml(matchIdStr) + '"' +
             (hasHopeStar ? ' checked' : '') +
             (hopeStarDisabled ? ' disabled' : '') +
             ' aria-label="Ngôi sao hy vọng">' +
           '<span class="hope-star-icon" aria-hidden="true"></span>' +
-          '<span class="hope-star-label">Ngôi sao hy vọng</span>' +
-          (hopeStarUsedElsewhere && !hasHopeStar
-            ? '<span class="hope-star-hint">(đã dùng ở vòng ' + escapeHtml(HOPE_STAR_ROUND_LABELS[roundKey] || '') + ')</span>'
-            : '') +
+          '<span class="hope-star-label">Hy vọng</span>' +
         '</label>';
     }
 
@@ -204,8 +205,8 @@
               (locked ? ' disabled' : '') + '>' +
             '<span>' + escapeHtml(match.awayTeam.shortName || match.awayTeam.name) + ' thắng</span>' +
           '</label>' +
+          hopeStarHtml +
         '</div>' +
-        hopeStarHtml +
         '<div class="flex items-center gap-2 flex-wrap">' +
           lockedBadge +
           '<button type="button" class="btn btn-primary btn-save-prediction"' +
