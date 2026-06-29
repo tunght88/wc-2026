@@ -404,6 +404,61 @@ body {
   border: 1px solid #fcd34d;
   cursor: pointer;
   font-size: 0.875rem;
+  user-select: none;
+}
+
+.hope-star-checkbox {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hope-star-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  font-size: 1.65rem;
+  line-height: 1;
+  color: #d1d5db;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: color 0.15s ease, transform 0.15s ease, filter 0.15s ease;
+}
+
+.hope-star-icon::before {
+  content: '☆';
+}
+
+.hope-star-checkbox:checked + .hope-star-icon {
+  color: #f59e0b;
+  filter: drop-shadow(0 1px 3px rgba(245, 158, 11, 0.45));
+  transform: scale(1.05);
+}
+
+.hope-star-checkbox:checked + .hope-star-icon::before {
+  content: '★';
+}
+
+.hope-star-option:hover:not(.disabled) .hope-star-icon {
+  color: #fbbf24;
+}
+
+.hope-star-option:hover:not(.disabled) .hope-star-checkbox:not(:checked) + .hope-star-icon::before {
+  content: '★';
+  opacity: 0.55;
+}
+
+.hope-star-option:focus-within:not(.disabled) {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
 }
 
 .hope-star-option:hover:not(.disabled) {

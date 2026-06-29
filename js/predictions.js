@@ -153,8 +153,10 @@
         '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '">' +
           '<input type="checkbox" class="hope-star-checkbox" data-match-id="' + escapeHtml(matchIdStr) + '"' +
             (hasHopeStar ? ' checked' : '') +
-            (hopeStarDisabled ? ' disabled' : '') + '>' +
-          '<span class="hope-star-label">⭐ Ngôi sao hy vọng</span>' +
+            (hopeStarDisabled ? ' disabled' : '') +
+            ' aria-label="Ngôi sao hy vọng">' +
+          '<span class="hope-star-icon" aria-hidden="true"></span>' +
+          '<span class="hope-star-label">Ngôi sao hy vọng</span>' +
           (hopeStarUsedElsewhere && !hasHopeStar
             ? '<span class="hope-star-hint">(đã dùng ở vòng ' + escapeHtml(HOPE_STAR_ROUND_LABELS[roundKey] || '') + ')</span>'
             : '') +
