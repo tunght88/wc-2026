@@ -85,15 +85,18 @@ function isHopeStarActive(value) {
   return false;
 }
 
+const HOPE_STAR_CORRECT_MULTIPLIER = 3;
+const HOPE_STAR_WRONG_MULTIPLIER = 2;
+
 function computeMatchPenaltyPoints(match, prediction, hopeStar) {
   const basePenalty = getStagePenalty(match.stage);
   if (!prediction) return basePenalty;
   const actual = getActualResult(match);
   if (!actual) return null;
   if (prediction === actual) {
-    return hopeStar ? -basePenalty * 2 : 0;
+    return hopeStar ? -basePenalty * HOPE_STAR_CORRECT_MULTIPLIER : 0;
   }
-  return hopeStar ? basePenalty * 2 : basePenalty;
+  return hopeStar ? basePenalty * HOPE_STAR_WRONG_MULTIPLIER : basePenalty;
 }
 
 function formatPenaltyLabel(points) {

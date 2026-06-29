@@ -94,7 +94,7 @@
       '<div class="hope-star-legend wc-card">' +
         '<div class="hope-star-legend-title">⭐ Ngôi sao hy vọng</div>' +
         '<p class="hope-star-legend-desc">Từ vòng 32 đội, mỗi vòng được chọn <strong>1 trận</strong>. ' +
-        'Đúng: <strong>−×2 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
+        'Đúng: <strong>−×3 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
         '<div class="hope-star-legend-rounds">' + items + '</div>' +
       '</div>'
     );
@@ -151,7 +151,7 @@
     if (hopeStarEligible) {
       const hopeStarTitle = hopeStarUsedElsewhere && !hasHopeStar
         ? 'Đã dùng ngôi sao hy vọng ở vòng ' + (HOPE_STAR_ROUND_LABELS[roundKey] || '')
-        : 'Ngôi sao hy vọng — đúng: −×2 điểm phạt, sai: +×2 điểm phạt';
+        : 'Ngôi sao hy vọng — đúng: −×3 điểm phạt, sai: +×2 điểm phạt';
       hopeStarHtml =
         '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '"' +
           ' title="' + escapeHtml(hopeStarTitle) + '">' +
