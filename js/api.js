@@ -38,8 +38,15 @@ async function register(username, passwordHash, fullName) {
   return postAction('register', { username, passwordHash, fullName });
 }
 
-async function savePrediction(username, passwordHash, groupId, matchId, prediction) {
-  return postAction('savePrediction', { username, passwordHash, groupId, matchId, prediction });
+async function savePrediction(username, passwordHash, groupId, matchId, prediction, hopeStar) {
+  return postAction('savePrediction', {
+    username,
+    passwordHash,
+    groupId,
+    matchId,
+    prediction,
+    hopeStar: !!hopeStar,
+  });
 }
 
 async function getPredictions(username, passwordHash, groupId) {

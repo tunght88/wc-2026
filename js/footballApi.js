@@ -49,6 +49,88 @@ function getStagePenalty(stage) {
   return STAGE_PENALTIES[stage] || 1;
 }
 
+const HOPE_STAR_ROUND_KEYS = {
+  LAST_32: 'r32',
+  ROUND_OF_32: 'r32',
+  LAST_16: 'r16',
+  ROUND_OF_16: 'r16',
+  QUARTER_FINALS: 'qf',
+  SEMI_FINALS: 'sf',
+  THIRD_PLACE: 'third',
+  FINAL: 'final',
+};
+
+const HOPE_STAR_ROUND_LABELS = {
+  r32: 'Vòng 32',
+  r16: 'Vòng 16',
+  qf: 'Tứ kết',
+  sf: 'Bán kết',
+  third: 'Tranh hạng 3',
+  final: 'Chung kết',
+};
+
+function getHopeStarRoundKey(stage) {
+  return HOPE_STAR_ROUND_KEYS[stage] || null;
+}
+
+function isHopeStarEligible(stage) {
+  return !!getHopeStarRoundKey(stage);
+}
+
+function isHopeStarActive(value) {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') {
+    return value.toUpperCase() === 'TRUE' || value === '1';
+  }
+  return false;
+}
+
+function computeMatchPenaltyPoints(match, prediction, hopeStar) {
+  const basePenalty = getStagePenalty(match.stage);
+  if (!prediction) return basePenalty;
+  const actual = getActualResult(match);
+  if (!actual) return null;
+  if (prediction === actual) {
+    return hopeStar ? -basePenalty * 2 : 0;
+  }
+  return hopeStar ? basePenalty * 2 : basePenalty;
+}
+
+function formatPenaltyLabel(points) {
+  if (points === null || points === undefined) return '-';
+  if (points === 0) return '0';
+  if (points > 0) return '+' + points;
+  return String(points);
+}
+
+function buildHopeStarUsageMap(predictions, username, matches) {
+  const stageByMatchId = {};
+  (matches || []).forEach(function (match) {
+    stageByMatchId[String(match.id)] = match.stage;
+  });
+
+  const usage = {};
+  (predictions || []).forEach(function (prediction) {
+    if (prediction.username !== username || !isHopeStarActive(prediction.hopeStar)) return;
+    const roundKey = getHopeStarRoundKey(stageByMatchId[String(prediction.matchId)]);
+    if (roundKey) {
+      usage[roundKey] = String(prediction.matchId);
+    }
+  });
+  return usage;
+}
+
+function buildHopeStarByMatchMap(predictions, username) {
+  const map = {};
+  (predictions || []).forEach(function (prediction) {
+    if (prediction.username !== username) return;
+    if (isHopeStarActive(prediction.hopeStar)) {
+      map[String(prediction.matchId)] = true;
+    }
+  });
+  return map;
+}
+
 function getFinishedMatchesWithResult(matches) {
   return matches.filter(function (m) {
     return m.status === 'FINISHED' && getActualResult(m);
@@ -84,6 +166,16 @@ function buildPredictionMap(predictions) {
   predictions.forEach(function (p) {
     if (!map[p.username]) map[p.username] = {};
     map[p.username][String(p.matchId)] = p.prediction;
+  });
+  return map;
+}
+
+function buildHopeStarByMatchMapForUsers(predictions) {
+  const map = {};
+  (predictions || []).forEach(function (prediction) {
+    if (!isHopeStarActive(prediction.hopeStar)) return;
+    if (!map[prediction.username]) map[prediction.username] = {};
+    map[prediction.username][String(prediction.matchId)] = true;
   });
   return map;
 }
@@ -169,14 +261,17 @@ function computeLeaderboard(activeUsers, predictions, matches, startDate) {
     filterMatchesForGroup(matches, startDate)
   );
 
+  const hopeStarMap = buildHopeStarByMatchMapForUsers(predictions);
+
   finishedMatches.forEach(function (match) {
     const matchId = String(match.id);
     const actual = getActualResult(match);
-    const penalty = getStagePenalty(match.stage);
 
     activeUsers.forEach(function (user) {
       const entry = scores[user.username];
       const prediction = predMap[user.username] && predMap[user.username][matchId];
+      const hopeStar = hopeStarMap[user.username] && hopeStarMap[user.username][matchId];
+      const penalty = computeMatchPenaltyPoints(match, prediction, hopeStar);
 
       entry.total++;
 
@@ -185,6 +280,7 @@ function computeLeaderboard(activeUsers, predictions, matches, startDate) {
         entry.missed++;
       } else if (prediction === actual) {
         entry.correct++;
+        if (hopeStar) entry.penalties += penalty;
       } else {
         entry.penalties += penalty;
         entry.wrong++;
