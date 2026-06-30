@@ -45,6 +45,54 @@ const STAGE_PENALTY_LEGEND = [
   { label: 'Chung kết', penalty: 20, stages: ['FINAL'] },
 ];
 
+const LEADERBOARD_STAGE_FILTERS = [
+  { key: 'group', label: 'Vòng bảng', stages: ['GROUP_STAGE'] },
+  { key: 'r32', label: 'Vòng 32', stages: ['LAST_32', 'ROUND_OF_32'] },
+  { key: 'r16', label: 'Vòng 16', stages: ['LAST_16', 'ROUND_OF_16'] },
+  { key: 'qf', label: 'Tứ kết', stages: ['QUARTER_FINALS'] },
+  { key: 'sf', label: 'Bán kết', stages: ['SEMI_FINALS'] },
+  { key: 'third', label: 'Tranh hạng 3', stages: ['THIRD_PLACE'] },
+  { key: 'final', label: 'Chung kết', stages: ['FINAL'] },
+];
+
+function getAllLeaderboardStageFilterKeys() {
+  return LEADERBOARD_STAGE_FILTERS.map(function (filter) {
+    return filter.key;
+  });
+}
+
+function filterMatchesByLeaderboardStages(matches, selectedKeys) {
+  if (!selectedKeys || !selectedKeys.length) return [];
+  const allKeys = getAllLeaderboardStageFilterKeys();
+  if (selectedKeys.length >= allKeys.length) return matches;
+
+  const stageSet = {};
+  LEADERBOARD_STAGE_FILTERS.forEach(function (filter) {
+    if (selectedKeys.indexOf(filter.key) === -1) return;
+    filter.stages.forEach(function (stage) {
+      stageSet[stage] = true;
+    });
+  });
+
+  return matches.filter(function (match) {
+    return !!stageSet[match.stage];
+  });
+}
+
+function getLeaderboardStageFilterSummary(selectedKeys) {
+  if (!selectedKeys || !selectedKeys.length) return 'Chưa chọn vòng nào';
+  const allKeys = getAllLeaderboardStageFilterKeys();
+  if (selectedKeys.length >= allKeys.length) return 'Tất cả vòng';
+
+  const labels = LEADERBOARD_STAGE_FILTERS.filter(function (filter) {
+    return selectedKeys.indexOf(filter.key) !== -1;
+  }).map(function (filter) {
+    return filter.label;
+  });
+
+  return labels.join(', ');
+}
+
 function getStagePenalty(stage) {
   return STAGE_PENALTIES[stage] || 1;
 }
@@ -208,16 +256,20 @@ function createLeaderboardEntry(user) {
   };
 }
 
-function computeLeaderboard(activeUsers, predictions, matches, startDate) {
+function computeLeaderboard(activeUsers, predictions, matches, startDate, stageFilterKeys) {
   const scores = {};
   activeUsers.forEach(function (user) {
     scores[user.username] = createLeaderboardEntry(user);
   });
 
   const predMap = buildPredictionMap(predictions);
-  const finishedMatches = getFinishedMatchesWithResult(
+  let finishedMatches = getFinishedMatchesWithResult(
     filterMatchesForGroup(matches, startDate)
   );
+
+  if (stageFilterKeys) {
+    finishedMatches = filterMatchesByLeaderboardStages(finishedMatches, stageFilterKeys);
+  }
 
   const hopeStarMap = buildHopeStarByMatchMapForUsers(predictions);
 

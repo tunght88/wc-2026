@@ -6,6 +6,12 @@
 
   renderNav('leaderboard');
 
+  let allMatches = [];
+  let allPredictions = [];
+  let allPlayers = [];
+  let selectedStageKeys = getAllLeaderboardStageFilterKeys().slice();
+
+  const stageFilterBar = document.getElementById('stage-filter-bar');
   const leaderboardContainer = document.getElementById('leaderboard-container');
   const errorBanner = document.getElementById('error-banner');
 
@@ -45,14 +51,68 @@
     );
   }
 
-  function renderLeaderboard(rows, predictions, matches, players) {
+  function renderStageFilters() {
+    let html =
+      '<button type="button" class="filter-btn filter-btn-sm" data-stage-action="all">Tất cả</button>' +
+      '<button type="button" class="filter-btn filter-btn-sm" data-stage-action="none">Bỏ chọn</button>';
+
+    LEADERBOARD_STAGE_FILTERS.forEach(function (filter) {
+      const active = selectedStageKeys.indexOf(filter.key) !== -1 ? ' active' : '';
+      html +=
+        '<button type="button" class="filter-btn filter-btn-multi' + active + '" data-stage-key="' +
+          escapeHtml(filter.key) + '">' + escapeHtml(filter.label) + '</button>';
+    });
+
+    stageFilterBar.innerHTML = html;
+
+    stageFilterBar.querySelectorAll('[data-stage-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.dataset.stageAction === 'all') {
+          selectedStageKeys = getAllLeaderboardStageFilterKeys().slice();
+        } else {
+          selectedStageKeys = [];
+        }
+        renderStageFilters();
+        refreshLeaderboard();
+      });
+    });
+
+    stageFilterBar.querySelectorAll('[data-stage-key]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const key = btn.dataset.stageKey;
+        const index = selectedStageKeys.indexOf(key);
+        if (index === -1) {
+          selectedStageKeys.push(key);
+        } else {
+          selectedStageKeys.splice(index, 1);
+        }
+        renderStageFilters();
+        refreshLeaderboard();
+      });
+    });
+  }
+
+  function renderLeaderboardTable(rows, predictions, matches, players) {
     const groupMatches = filterMatchesForGroup(matches, getCurrentGroupStartDate());
+    const stageSummary = getLeaderboardStageFilterSummary(selectedStageKeys);
+    const isFiltered = selectedStageKeys.length < getAllLeaderboardStageFilterKeys().length;
+
+    if (!selectedStageKeys.length) {
+      leaderboardContainer.innerHTML =
+        renderPenaltyLegend() +
+        '<div class="empty-state">' +
+          '<div class="empty-state-icon">🏆</div>' +
+          '<p>Chọn ít nhất một vòng để xem bảng xếp hạng</p>' +
+        '</div>';
+      return;
+    }
+
     if (rows.length === 0) {
       leaderboardContainer.innerHTML =
         renderPenaltyLegend() +
         '<div class="empty-state">' +
           '<div class="empty-state-icon">🏆</div>' +
-          '<p>Chưa có dữ liệu bảng xếp hạng</p>' +
+          '<p>Chưa có dữ liệu cho vòng đã chọn</p>' +
         '</div>';
       return;
     }
@@ -62,6 +122,9 @@
 
     html +=
       '<div class="wc-card">' +
+        (isFiltered
+          ? '<p class="leaderboard-filter-summary">Đang xem: <strong>' + escapeHtml(stageSummary) + '</strong></p>'
+          : '') +
         '<div class="table-wrapper">' +
           '<table class="data-table">' +
             '<thead><tr>' +
@@ -104,8 +167,20 @@
     leaderboardContainer.innerHTML = html;
   }
 
+  function refreshLeaderboard() {
+    const rows = computeLeaderboard(
+      allPlayers,
+      allPredictions,
+      allMatches,
+      getCurrentGroupStartDate(),
+      selectedStageKeys
+    );
+    renderLeaderboardTable(rows, allPredictions, allMatches, allPlayers);
+  }
+
   async function init() {
     showLoading(true);
+    renderStageFilters();
 
     try {
       const [matches, predResult] = await Promise.all([
@@ -113,20 +188,14 @@
         getPredictions(session.username, session.passwordHash, getCurrentGroupId()),
       ]);
 
-      const players = getActivePlayers(predResult.activeUsers || []);
-      const predictions = predResult.predictions || [];
+      allMatches = matches;
+      allPlayers = getActivePlayers(predResult.activeUsers || []);
+      allPredictions = predResult.predictions || [];
 
-      const rows = computeLeaderboard(
-        players,
-        predictions,
-        matches,
-        getCurrentGroupStartDate()
-      );
-
-      renderLeaderboard(rows, predictions, matches, players);
+      refreshLeaderboard();
       initReminderBanner(session, {
         matches: matches,
-        userPredMap: buildUserPredictionMap(predictions, session.username),
+        userPredMap: buildUserPredictionMap(allPredictions, session.username),
       });
     } catch (err) {
       errorBanner.textContent = err.message || 'Không thể tải bảng xếp hạng';

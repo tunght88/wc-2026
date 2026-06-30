@@ -652,6 +652,31 @@ body {
   border-color: var(--wc-green);
 }
 
+.filter-btn-multi:not(.active) {
+  background: #f9fafb;
+  color: #6b7280;
+  border-color: #e5e7eb;
+}
+
+.filter-btn-multi:not(.active):hover {
+  background: #f3f4f6;
+  color: var(--wc-dark);
+  border-color: #d1d5db;
+}
+
+.filter-btn-sm {
+  font-size: 0.75rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.leaderboard-filter-summary {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin: 0 0 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--wc-border);
+}
+
 .search-input {
   width: 100%;
   max-width: 400px;
