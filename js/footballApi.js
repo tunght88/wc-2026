@@ -49,34 +49,6 @@ function getStagePenalty(stage) {
   return STAGE_PENALTIES[stage] || 1;
 }
 
-const HOPE_STAR_ROUND_KEYS = {
-  LAST_32: 'r32',
-  ROUND_OF_32: 'r32',
-  LAST_16: 'r16',
-  ROUND_OF_16: 'r16',
-  QUARTER_FINALS: 'qf',
-  SEMI_FINALS: 'sf',
-  THIRD_PLACE: 'third',
-  FINAL: 'final',
-};
-
-const HOPE_STAR_ROUND_LABELS = {
-  r32: 'Vòng 32',
-  r16: 'Vòng 16',
-  qf: 'Tứ kết',
-  sf: 'Bán kết',
-  third: 'Tranh hạng 3',
-  final: 'Chung kết',
-};
-
-function getHopeStarRoundKey(stage) {
-  return HOPE_STAR_ROUND_KEYS[stage] || null;
-}
-
-function isHopeStarEligible(stage) {
-  return !!getHopeStarRoundKey(stage);
-}
-
 function isHopeStarActive(value) {
   if (value === true || value === 1) return true;
   if (typeof value === 'string') {
@@ -85,7 +57,7 @@ function isHopeStarActive(value) {
   return false;
 }
 
-const HOPE_STAR_CORRECT_MULTIPLIER = 3;
+const HOPE_STAR_CORRECT_MULTIPLIER = 2;
 const HOPE_STAR_WRONG_MULTIPLIER = 2;
 
 function computeMatchPenaltyPoints(match, prediction, hopeStar) {
@@ -104,23 +76,6 @@ function formatPenaltyLabel(points) {
   if (points === 0) return '0';
   if (points > 0) return '+' + points;
   return String(points);
-}
-
-function buildHopeStarUsageMap(predictions, username, matches) {
-  const stageByMatchId = {};
-  (matches || []).forEach(function (match) {
-    stageByMatchId[String(match.id)] = match.stage;
-  });
-
-  const usage = {};
-  (predictions || []).forEach(function (prediction) {
-    if (prediction.username !== username || !isHopeStarActive(prediction.hopeStar)) return;
-    const roundKey = getHopeStarRoundKey(stageByMatchId[String(prediction.matchId)]);
-    if (roundKey) {
-      usage[roundKey] = String(prediction.matchId);
-    }
-  });
-  return usage;
 }
 
 function buildHopeStarByMatchMap(predictions, username) {

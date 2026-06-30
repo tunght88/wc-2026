@@ -9,7 +9,6 @@
   let allMatches = [];
   let allPredictions = [];
   let userPredictions = {};
-  let userHopeStars = {};
   let userHopeStarByMatch = {};
   let activePlayers = [];
   let predictionMapByMatch = {};
@@ -73,29 +72,15 @@
   }
 
   function rebuildHopeStarState() {
-    userHopeStars = buildHopeStarUsageMap(allPredictions, session.username, allMatches);
     userHopeStarByMatch = buildHopeStarByMatchMap(allPredictions, session.username);
   }
 
   function renderHopeStarLegend() {
-    const rounds = Object.keys(HOPE_STAR_ROUND_LABELS);
-    let items = rounds.map(function (roundKey) {
-      const used = !!userHopeStars[roundKey];
-      const cls = used ? 'hope-star-legend-used' : 'hope-star-legend-available';
-      const status = used ? 'đã dùng' : 'còn trống';
-      return (
-        '<span class="hope-star-legend-item ' + cls + '">' +
-          '⭐ ' + escapeHtml(HOPE_STAR_ROUND_LABELS[roundKey]) + ': ' + status +
-        '</span>'
-      );
-    }).join('');
-
     return (
       '<div class="hope-star-legend wc-card">' +
         '<div class="hope-star-legend-title">⭐ Ngôi sao hy vọng</div>' +
-        '<p class="hope-star-legend-desc">Từ vòng 32 đội, mỗi vòng được chọn <strong>1 trận</strong>. ' +
-        'Đúng: <strong>−×3 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
-        '<div class="hope-star-legend-rounds">' + items + '</div>' +
+        '<p class="hope-star-legend-desc">Mỗi trận có thể gắn ngôi sao hy vọng. ' +
+        'Đúng: <strong>−×2 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
       '</div>'
     );
   }
@@ -140,20 +125,13 @@
     }
 
     const matchIdStr = String(match.id);
-    const hopeStarEligible = isHopeStarEligible(match.stage) && !beforeGroupStart;
-    const roundKey = getHopeStarRoundKey(match.stage);
     const hasHopeStar = !!userHopeStarByMatch[matchIdStr];
-    const hopeStarUsedElsewhere =
-      roundKey && userHopeStars[roundKey] && userHopeStars[roundKey] !== matchIdStr;
-    const hopeStarDisabled = locked || (hopeStarUsedElsewhere && !hasHopeStar);
+    const hopeStarDisabled = locked;
 
-    let hopeStarHtml = '';
-    if (hopeStarEligible) {
-      const hopeStarTitle = hopeStarUsedElsewhere && !hasHopeStar
-        ? 'Đã dùng ngôi sao hy vọng ở vòng ' + (HOPE_STAR_ROUND_LABELS[roundKey] || '')
-        : 'Ngôi sao hy vọng — đúng: −×3 điểm phạt, sai: +×2 điểm phạt';
-      hopeStarHtml =
-        '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '"' +
+    const hopeStarTitle = 'Ngôi sao hy vọng — đúng: −×2 điểm phạt, sai: +×2 điểm phạt';
+    const hopeStarHtml = beforeGroupStart
+      ? ''
+      : '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '"' +
           ' title="' + escapeHtml(hopeStarTitle) + '">' +
           '<input type="checkbox" class="hope-star-checkbox" data-match-id="' + escapeHtml(matchIdStr) + '"' +
             (hasHopeStar ? ' checked' : '') +
@@ -162,7 +140,6 @@
           '<span class="hope-star-icon" aria-hidden="true"></span>' +
           '<span class="hope-star-label">Hy vọng</span>' +
         '</label>';
-    }
 
     return (
       '<div class="match-card match-card-pred-' + resultStatus + (locked ? ' locked' : '') + (hasHopeStar ? ' has-hope-star' : '') + '" data-match-id="' + escapeHtml(matchIdStr) + '">' +
@@ -295,23 +272,6 @@
       allPredictions = allPredictions.filter(function (p) {
         return !(p.username === session.username && String(p.matchId) === String(matchId));
       });
-      if (hopeStar) {
-        const savedMatch = allMatches.find(function (m) {
-          return String(m.id) === String(matchId);
-        });
-        const savedRoundKey = savedMatch ? getHopeStarRoundKey(savedMatch.stage) : null;
-        if (savedRoundKey) {
-          allPredictions.forEach(function (p) {
-            if (p.username !== session.username || !isHopeStarActive(p.hopeStar)) return;
-            const otherMatch = allMatches.find(function (m) {
-              return String(m.id) === String(p.matchId);
-            });
-            if (otherMatch && getHopeStarRoundKey(otherMatch.stage) === savedRoundKey) {
-              p.hopeStar = false;
-            }
-          });
-        }
-      }
       allPredictions.push({
         username: session.username,
         matchId: matchId,
