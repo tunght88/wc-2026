@@ -457,27 +457,9 @@ function getScoreGoals(scorePart) {
 function deriveResultFromScore(score) {
   if (!score) return null;
 
-  const fromWinner = mapWinnerToPrediction(score.winner);
-  if (fromWinner) return fromWinner;
-
   const fullTime = getScoreGoals(score.fullTime);
-  let home = fullTime.home;
-  let away = fullTime.away;
-
-  if (score.penalties) {
-    const pen = getScoreGoals(score.penalties);
-    if (pen.home !== null && pen.away !== null && pen.home !== pen.away) {
-      return pen.home > pen.away ? 'HOME' : 'AWAY';
-    }
-  }
-
-  if (score.extraTime) {
-    const extra = getScoreGoals(score.extraTime);
-    if (extra.home !== null && extra.away !== null) {
-      home = extra.home;
-      away = extra.away;
-    }
-  }
+  const home = fullTime.home;
+  const away = fullTime.away;
 
   if (home === null || home === undefined || away === null || away === undefined) {
     return null;

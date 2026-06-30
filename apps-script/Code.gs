@@ -394,28 +394,9 @@ function getScoreGoalsFromApi(scorePart) {
 function deriveMatchResultFromApi(match) {
   if (!match || !match.score || match.status !== 'FINISHED') return '';
 
-  var score = match.score;
-  var fromWinner = mapWinnerToResult(score.winner);
-  if (fromWinner) return fromWinner;
-
-  var fullTime = getScoreGoalsFromApi(score.fullTime);
+  var fullTime = getScoreGoalsFromApi(match.score.fullTime);
   var home = fullTime.home;
   var away = fullTime.away;
-
-  if (score.penalties) {
-    var pen = getScoreGoalsFromApi(score.penalties);
-    if (pen.home !== null && pen.away !== null && pen.home !== pen.away) {
-      return pen.home > pen.away ? 'HOME' : 'AWAY';
-    }
-  }
-
-  if (score.extraTime) {
-    var extra = getScoreGoalsFromApi(score.extraTime);
-    if (extra.home !== null && extra.away !== null) {
-      home = extra.home;
-      away = extra.away;
-    }
-  }
 
   if (home === null || home === undefined || away === null || away === undefined) {
     return '';
