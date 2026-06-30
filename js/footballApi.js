@@ -454,12 +454,28 @@ function getScoreGoals(scorePart) {
   return { home: home, away: away };
 }
 
+function getRegulationTimeGoals(score) {
+  if (!score) return { home: null, away: null };
+  if (score.regularTime) {
+    const regular = getScoreGoals(score.regularTime);
+    if (
+      regular.home !== null &&
+      regular.home !== undefined &&
+      regular.away !== null &&
+      regular.away !== undefined
+    ) {
+      return regular;
+    }
+  }
+  return getScoreGoals(score.fullTime);
+}
+
 function deriveResultFromScore(score) {
   if (!score) return null;
 
-  const fullTime = getScoreGoals(score.fullTime);
-  const home = fullTime.home;
-  const away = fullTime.away;
+  const regulation = getRegulationTimeGoals(score);
+  const home = regulation.home;
+  const away = regulation.away;
 
   if (home === null || home === undefined || away === null || away === undefined) {
     return null;
@@ -475,8 +491,8 @@ function getActualResult(match) {
 }
 
 function getMatchScore(match) {
-  if (!match.score || !match.score.fullTime) return null;
-  const goals = getScoreGoals(match.score.fullTime);
+  if (!match.score) return null;
+  const goals = getRegulationTimeGoals(match.score);
   if (goals.home === null || goals.away === null) return null;
   return goals.home + ' - ' + goals.away;
 }
