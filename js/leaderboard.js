@@ -22,7 +22,7 @@
         '<p class="leaderboard-legend-desc">Dự đoán <strong>sai</strong> hoặc <strong>không dự đoán</strong> sẽ cộng điểm phạt theo vòng đấu. ' +
         'Xếp hạng theo <strong>điểm phạt thấp nhất</strong> (đúng = 0 điểm phạt).</p>' +
         '<p class="leaderboard-legend-desc hope-star-legend-inline">' +
-        '⭐ <strong>Ngôi sao hy vọng</strong>: mỗi trận có thể gắn — đúng <strong>−×2 điểm phạt</strong>, sai <strong>+×2 điểm phạt</strong>.' +
+        '⭐ <strong>Ngôi sao hy vọng</strong>: mỗi trận có thể gắn — đúng <strong>−×1 điểm phạt</strong>, sai <strong>+×2 điểm phạt</strong>.' +
         '</p>' +
         '<div class="table-wrapper">' +
           '<table class="data-table penalty-legend-table">' +

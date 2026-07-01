@@ -105,7 +105,7 @@ function isHopeStarActive(value) {
   return false;
 }
 
-const HOPE_STAR_CORRECT_MULTIPLIER = 2;
+const HOPE_STAR_CORRECT_MULTIPLIER = 1;
 const HOPE_STAR_WRONG_MULTIPLIER = 2;
 
 function computeMatchPenaltyPoints(match, prediction, hopeStar) {

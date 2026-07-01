@@ -80,7 +80,7 @@
       '<div class="hope-star-legend wc-card">' +
         '<div class="hope-star-legend-title">⭐ Ngôi sao hy vọng</div>' +
         '<p class="hope-star-legend-desc">Mỗi trận có thể gắn ngôi sao hy vọng. ' +
-        'Đúng: <strong>−×2 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
+        'Đúng: <strong>−×1 điểm phạt</strong> (giảm phạt). Sai: <strong>+×2 điểm phạt</strong>.</p>' +
       '</div>'
     );
   }
@@ -128,7 +128,7 @@
     const hasHopeStar = !!userHopeStarByMatch[matchIdStr];
     const hopeStarDisabled = locked;
 
-    const hopeStarTitle = 'Ngôi sao hy vọng — đúng: −×2 điểm phạt, sai: +×2 điểm phạt';
+    const hopeStarTitle = 'Ngôi sao hy vọng — đúng: −×1 điểm phạt, sai: +×2 điểm phạt';
     const hopeStarHtml = beforeGroupStart
       ? ''
       : '<label class="hope-star-option' + (hopeStarDisabled ? ' disabled' : '') + '"' +
