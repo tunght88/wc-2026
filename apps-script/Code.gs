@@ -351,7 +351,7 @@ function ensureMatchesSheet() {
 
   if (sheet.getLastRow() === 0) {
     sheet
-      .getRange(1, 1, 1, 11)
+      .getRange(1, 1, 1, 12)
       .setValues([
         [
           'match_id',
@@ -365,10 +365,13 @@ function ensureMatchesSheet() {
           'away_score',
           'result',
           'synced_at',
+          'score_locked',
         ],
       ])
       .setFontWeight('bold');
     sheet.setFrozenRows(1);
+  } else if (String(sheet.getRange(1, 12).getValue() || '').toLowerCase() !== 'score_locked') {
+    sheet.getRange(1, 12).setValue('score_locked').setFontWeight('bold');
   }
 
   return sheet;
@@ -404,7 +407,136 @@ function getRegulationTimeGoalsFromApi(score) {
       return regular;
     }
   }
-  return getScoreGoalsFromApi(score.fullTime);
+
+  var duration = String(score.duration || 'REGULAR').toUpperCase();
+
+  if (duration === 'EXTRA_TIME' && score.extraTime && score.fullTime) {
+    var full = getScoreGoalsFromApi(score.fullTime);
+    var extra = getScoreGoalsFromApi(score.extraTime);
+    if (
+      full.home !== null &&
+      full.home !== undefined &&
+      full.away !== null &&
+      full.away !== undefined &&
+      extra.home !== null &&
+      extra.home !== undefined &&
+      extra.away !== null &&
+      extra.away !== undefined
+    ) {
+      return { home: full.home - extra.home, away: full.away - extra.away };
+    }
+  }
+
+  if (duration === 'REGULAR' || duration === '') {
+    return getScoreGoalsFromApi(score.fullTime);
+  }
+
+  return { home: null, away: null };
+}
+
+function parseSheetScore(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  var n = parseInt(value, 10);
+  return isNaN(n) ? null : n;
+}
+
+function parseSheetBool(value) {
+  if (value === true || value === 1) return true;
+  if (String(value).toUpperCase() === 'TRUE' || value === '1') return true;
+  return false;
+}
+
+function readMatchScoreOverridesFromSheet() {
+  var sheet = getMatchesSheet();
+  if (!sheet) return {};
+  var data = sheet.getDataRange().getValues();
+  var map = {};
+
+  for (var i = 1; i < data.length; i++) {
+    var matchId = String(data[i][0] || '');
+    if (!matchId) continue;
+
+    var homeScore = parseSheetScore(data[i][7]);
+    var awayScore = parseSheetScore(data[i][8]);
+    if (homeScore === null || awayScore === null) continue;
+
+    map[matchId] = {
+      homeScore: homeScore,
+      awayScore: awayScore,
+      result: String(data[i][9] || '').toUpperCase(),
+      locked: parseSheetBool(data[i][11]),
+    };
+  }
+
+  return map;
+}
+
+function shouldApplySheetScoreOverride(match, override) {
+  if (!override) return false;
+  if (override.locked) return true;
+
+  var apiResult = deriveMatchResultFromApi(match);
+  if (override.result && override.result !== apiResult) return true;
+
+  var apiReg = getRegulationTimeGoalsFromApi(match.score);
+  return (
+    apiReg.home !== override.homeScore ||
+    apiReg.away !== override.awayScore
+  );
+}
+
+function applyScoreOverrideToMatch(match, override) {
+  if (!match || !override) return match;
+  if (!match.score) match.score = {};
+  match.score.duration = 'REGULAR';
+  match.score.regularTime = {
+    home: override.homeScore,
+    away: override.awayScore,
+  };
+  match.score.fullTime = {
+    home: override.homeScore,
+    away: override.awayScore,
+  };
+  return match;
+}
+
+function applyMatchScoreOverrides(matches) {
+  var overrides = readMatchScoreOverridesFromSheet();
+  return (matches || []).map(function (match) {
+    var override = overrides[String(match.id)];
+    if (!shouldApplySheetScoreOverride(match, override)) return match;
+    return applyScoreOverrideToMatch(match, override);
+  });
+}
+
+function applyMatchScoreOverride(match) {
+  if (!match) return match;
+  var overrides = readMatchScoreOverridesFromSheet();
+  var override = overrides[String(match.id)];
+  if (!shouldApplySheetScoreOverride(match, override)) return match;
+  return applyScoreOverrideToMatch(match, override);
+}
+
+function shouldPreserveSheetScore(existingRow, newRow) {
+  if (parseSheetBool(existingRow[11])) return true;
+
+  var existingHome = parseSheetScore(existingRow[7]);
+  var existingAway = parseSheetScore(existingRow[8]);
+  var newHome = parseSheetScore(newRow[7]);
+  var newAway = parseSheetScore(newRow[8]);
+  if (
+    existingHome !== null &&
+    existingAway !== null &&
+    (existingHome !== newHome || existingAway !== newAway)
+  ) {
+    return true;
+  }
+
+  var existingResult = String(existingRow[9] || '').toUpperCase();
+  var newResult = String(newRow[9] || '').toUpperCase();
+  if (!existingResult || existingResult === newResult) return false;
+  if (existingRow[7] === '' && existingRow[8] === '') return false;
+  return true;
 }
 
 function deriveMatchResultFromApi(match) {
@@ -473,7 +605,14 @@ function syncMatchesToSheet(competition, season) {
     var row = buildMatchSheetRow(match);
     var matchId = String(match.id);
     if (rowMap[matchId]) {
-      sheet.getRange(rowMap[matchId], 1, 1, row.length).setValues([row]);
+      var rowNum = rowMap[matchId];
+      var existingRow = existing[rowNum - 1];
+      if (shouldPreserveSheetScore(existingRow, row)) {
+        row[7] = existingRow[7];
+        row[8] = existingRow[8];
+        row[9] = existingRow[9];
+      }
+      sheet.getRange(rowNum, 1, 1, row.length).setValues([row]);
       updated++;
     } else {
       sheet.appendRow(row);
@@ -748,7 +887,8 @@ function handleGetFootballMatches(payload) {
   try {
     maybeAutoSyncMatches();
     var data = footballApiGet('/competitions/' + competition + '/matches?season=' + season);
-    return { success: true, matches: data.matches || [] };
+    var matches = applyMatchScoreOverrides(data.matches || []);
+    return { success: true, matches: matches };
   } catch (err) {
     return { success: false, message: err.message };
   }
@@ -767,7 +907,7 @@ function handleGetFootballMatch(payload) {
 
   try {
     var match = footballApiGet('/matches/' + encodeURIComponent(matchId));
-    return { success: true, match: match };
+    return { success: true, match: applyMatchScoreOverride(match) };
   } catch (err) {
     return { success: false, message: err.message };
   }
@@ -788,7 +928,7 @@ function handleGetFootballMatchDetail(payload) {
     var match = footballApiGet('/matches/' + encodeURIComponent(matchId), {
       'X-Unfold-Lineups': 'true',
     });
-    return { success: true, match: match };
+    return { success: true, match: applyMatchScoreOverride(match) };
   } catch (err) {
     return { success: false, message: err.message };
   }

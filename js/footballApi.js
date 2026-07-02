@@ -1,4 +1,4 @@
-const CACHE_KEY = 'wc2026_matches_cache_v2';
+const CACHE_KEY = 'wc2026_matches_cache_v3';
 const CACHE_TTL = 5 * 60 * 1000;
 
 const STAGE_FILTERS = {
@@ -467,7 +467,31 @@ function getRegulationTimeGoals(score) {
       return regular;
     }
   }
-  return getScoreGoals(score.fullTime);
+
+  const duration = String(score.duration || 'REGULAR').toUpperCase();
+
+  if (duration === 'EXTRA_TIME' && score.extraTime && score.fullTime) {
+    const full = getScoreGoals(score.fullTime);
+    const extra = getScoreGoals(score.extraTime);
+    if (
+      full.home !== null &&
+      full.home !== undefined &&
+      full.away !== null &&
+      full.away !== undefined &&
+      extra.home !== null &&
+      extra.home !== undefined &&
+      extra.away !== null &&
+      extra.away !== undefined
+    ) {
+      return { home: full.home - extra.home, away: full.away - extra.away };
+    }
+  }
+
+  if (duration === 'REGULAR' || duration === '') {
+    return getScoreGoals(score.fullTime);
+  }
+
+  return { home: null, away: null };
 }
 
 function deriveResultFromScore(score) {
