@@ -1187,6 +1187,39 @@ function readChampionPredictionsForGroup(groupId) {
   return predictions;
 }
 
+function isValidKnockoutTeam(team) {
+  if (!team || team.id === null || team.id === undefined || String(team.id) === '') {
+    return false;
+  }
+  var name = String(team.name || team.shortName || '').toLowerCase();
+  if (!name || name === 'tbd') return false;
+  if (name.indexOf('winner') !== -1 || name.indexOf('loser') !== -1) return false;
+  return true;
+}
+
+function getQuarterFinalTeamIdsForGroup(groupId) {
+  var data = footballApiGet(
+    '/competitions/' + DEFAULT_COMPETITION + '/matches?season=' + DEFAULT_SEASON
+  );
+  var matches = data.matches || [];
+  var group = getGroupById(groupId);
+  var startDate = group ? group.startDate : '';
+  var teamMap = {};
+
+  for (var i = 0; i < matches.length; i++) {
+    if (String(matches[i].stage || '') !== 'QUARTER_FINALS') continue;
+    if (!isMatchOnOrAfterGroupStart(matches[i], startDate)) continue;
+    if (isValidKnockoutTeam(matches[i].homeTeam)) {
+      teamMap[String(matches[i].homeTeam.id)] = true;
+    }
+    if (isValidKnockoutTeam(matches[i].awayTeam)) {
+      teamMap[String(matches[i].awayTeam.id)] = true;
+    }
+  }
+
+  return Object.keys(teamMap);
+}
+
 function isChampionPredictionOpen(groupId) {
   try {
     var data = footballApiGet(
@@ -1195,21 +1228,21 @@ function isChampionPredictionOpen(groupId) {
     var matches = data.matches || [];
     var group = getGroupById(groupId);
     var startDate = group ? group.startDate : '';
-    var eligible = [];
+    var qfMatches = [];
 
     for (var i = 0; i < matches.length; i++) {
-      if (isMatchOnOrAfterGroupStart(matches[i], startDate)) {
-        eligible.push(matches[i]);
-      }
+      if (String(matches[i].stage || '') !== 'QUARTER_FINALS') continue;
+      if (!isMatchOnOrAfterGroupStart(matches[i], startDate)) continue;
+      qfMatches.push(matches[i]);
     }
 
-    if (!eligible.length) return true;
+    if (!qfMatches.length) return true;
 
-    eligible.sort(function (a, b) {
+    qfMatches.sort(function (a, b) {
       return new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime();
     });
 
-    return new Date() < new Date(eligible[0].utcDate);
+    return new Date() < new Date(qfMatches[0].utcDate);
   } catch (err) {
     return false;
   }
@@ -1244,7 +1277,18 @@ function handleSaveChampionPrediction(payload) {
   }
 
   if (!isChampionPredictionOpen(canonicalGroup.groupId)) {
-    return { success: false, message: 'Đã khóa dự đoán vô địch - giải đã bắt đầu' };
+    return { success: false, message: 'Đã khóa dự đoán vô địch - trận tứ kết đầu tiên đã bắt đầu' };
+  }
+
+  var qfTeamIds = getQuarterFinalTeamIdsForGroup(canonicalGroup.groupId);
+  if (qfTeamIds.length < 8) {
+    return {
+      success: false,
+      message: 'Danh sách 8 đội tứ kết chưa đủ (' + qfTeamIds.length + '/8)',
+    };
+  }
+  if (qfTeamIds.indexOf(teamId) === -1) {
+    return { success: false, message: 'Chỉ được chọn 1 trong 8 đội vào tứ kết' };
   }
 
   var sheet = getChampionPredictionsSheet();

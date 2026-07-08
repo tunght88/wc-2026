@@ -167,6 +167,35 @@ function getChampionTeamFromMatches(matches) {
   return null;
 }
 
+function isValidKnockoutTeam(team) {
+  if (!team || team.id === null || team.id === undefined || String(team.id) === '') {
+    return false;
+  }
+  const name = String(team.name || team.shortName || '').toLowerCase();
+  if (!name || name === 'tbd') return false;
+  if (name.indexOf('winner') !== -1 || name.indexOf('loser') !== -1) return false;
+  return true;
+}
+
+function extractQuarterFinalTeamsFromMatches(matches, startDate) {
+  const eligible = filterMatchesForGroup(matches || [], startDate);
+  const teamMap = {};
+
+  eligible.forEach(function (match) {
+    if (match.stage !== 'QUARTER_FINALS') return;
+    if (isValidKnockoutTeam(match.homeTeam)) {
+      teamMap[match.homeTeam.id] = match.homeTeam;
+    }
+    if (isValidKnockoutTeam(match.awayTeam)) {
+      teamMap[match.awayTeam.id] = match.awayTeam;
+    }
+  });
+
+  return Object.values(teamMap).sort(function (a, b) {
+    return (a.name || '').localeCompare(b.name || '', 'vi');
+  });
+}
+
 function extractTeamsFromMatches(matches) {
   const teamMap = {};
   (matches || []).forEach(function (match) {
@@ -184,8 +213,11 @@ function extractTeamsFromMatches(matches) {
 
 function getChampionPredictionLockTime(matches, startDate) {
   const eligible = filterMatchesForGroup(matches || [], startDate);
-  if (!eligible.length) return null;
-  return sortMatchesByDate(eligible)[0].utcDate;
+  const qfMatches = eligible.filter(function (match) {
+    return match.stage === 'QUARTER_FINALS';
+  });
+  if (!qfMatches.length) return null;
+  return sortMatchesByDate(qfMatches)[0].utcDate;
 }
 
 function isChampionPredictionLocked(matches, startDate) {

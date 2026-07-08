@@ -98,14 +98,14 @@
     if (!championCard) return;
 
     const groupStartDate = getCurrentGroupStartDate();
-    const teams = extractTeamsFromMatches(allMatches);
+    const groupMatches = filterMatchesForGroup(allMatches, groupStartDate);
+    const teams = extractQuarterFinalTeamsFromMatches(allMatches, groupStartDate);
     const locked = isChampionPredictionLocked(allMatches, groupStartDate);
     const lockTime = getChampionPredictionLockTime(allMatches, groupStartDate);
     const pick = userChampionPick;
-    const actualChampion = getChampionTeamFromMatches(
-      filterMatchesForGroup(allMatches, groupStartDate)
-    );
+    const actualChampion = getChampionTeamFromMatches(groupMatches);
     const hopeStar = pick && isHopeStarActive(pick.hopeStar);
+    const teamsReady = teams.length >= 8;
 
     let statusHtml = '';
     if (actualChampion) {
@@ -140,7 +140,9 @@
     }
 
     let teamOptions = '<option value="">-- Chọn đội vô địch --</option>';
+    const teamIds = {};
     teams.forEach(function (team) {
+      teamIds[String(team.id)] = true;
       const selected = pick && String(pick.teamId) === String(team.id) ? ' selected' : '';
       teamOptions +=
         '<option value="' + escapeHtml(String(team.id)) + '" data-name="' + escapeHtml(team.name) + '"' + selected + '>' +
@@ -148,8 +150,25 @@
         '</option>';
     });
 
+    if (pick && !teamIds[String(pick.teamId)]) {
+      teamOptions +=
+        '<option value="' + escapeHtml(String(pick.teamId)) + '" data-name="' + escapeHtml(pick.teamName) + '" selected>' +
+          escapeHtml(pick.teamName) +
+        '</option>';
+    }
+
+    const formDisabled = locked || !teamsReady;
+    let teamsNoticeHtml = '';
+    if (!teamsReady && !locked) {
+      teamsNoticeHtml =
+        '<p class="champion-teams-notice">' +
+          'Danh sách 8 đội tứ kết chưa đủ (' + teams.length + '/8). ' +
+          'Vui lòng quay lại khi đã xác định đủ đội vào tứ kết.' +
+        '</p>';
+    }
+
     const hopeStarTitle = 'Ngôi sao hy vọng — đúng: −40đ, sai/không chọn: +20đ';
-    const hopeStarHtml = locked
+    const hopeStarHtml = locked || !teamsReady
       ? (hopeStar ? '<span class="champion-hope-star-badge">⭐ Hy vọng</span>' : '')
       : '<label class="hope-star-option champion-hope-star"' +
           ' title="' + escapeHtml(hopeStarTitle) + '">' +
@@ -167,18 +186,21 @@
           lockBadge +
         '</div>' +
         '<p class="champion-card-desc">' +
+          'Chọn 1 trong <strong>8 đội vào tứ kết</strong>. ' +
           'Đúng: <strong>−20đ</strong> · Sai hoặc không chọn: <strong>+10đ</strong> · ' +
-          '⭐ nhân đôi hiệu ứng (đúng <strong>−40đ</strong>, sai <strong>+20đ</strong>)' +
+          '⭐ nhân đôi hiệu ứng (đúng <strong>−40đ</strong>, sai <strong>+20đ</strong>). ' +
+          'Khóa trước khi trận tứ kết đầu tiên bắt đầu.' +
         '</p>' +
+        teamsNoticeHtml +
         statusHtml +
         '<div class="champion-card-form">' +
           '<select id="champion-team-select" class="form-input champion-team-select"' +
-            (locked ? ' disabled' : '') + '>' +
+            (formDisabled ? ' disabled' : '') + '>' +
             teamOptions +
           '</select>' +
           hopeStarHtml +
           '<button type="button" id="btn-save-champion" class="btn btn-primary"' +
-            (locked ? ' disabled' : '') + '>Lưu dự đoán vô địch</button>' +
+            (formDisabled ? ' disabled' : '') + '>Lưu dự đoán vô địch</button>' +
         '</div>' +
         (pick && !actualChampion
           ? '<p class="champion-current-pick">Dự đoán hiện tại: <strong>' +
