@@ -8,6 +8,7 @@
 
   let allMatches = [];
   let allPredictions = [];
+  let allChampionPredictions = [];
   let allPlayers = [];
   let selectedStageKeys = getAllLeaderboardStageFilterKeys().slice();
 
@@ -23,6 +24,10 @@
         'Xếp hạng theo <strong>điểm phạt thấp nhất</strong> (đúng = 0 điểm phạt).</p>' +
         '<p class="leaderboard-legend-desc hope-star-legend-inline">' +
         '⭐ <strong>Ngôi sao hy vọng</strong>: mỗi trận có thể gắn — đúng <strong>−×1 điểm phạt</strong>, sai <strong>+×2 điểm phạt</strong>.' +
+        '</p>' +
+        '<p class="leaderboard-legend-desc hope-star-legend-inline">' +
+        '🏆 <strong>Dự đoán vô địch</strong>: đúng <strong>−20đ</strong>, sai hoặc không chọn <strong>+10đ</strong>. ' +
+        '⭐ nhân đôi (đúng <strong>−40đ</strong>, sai <strong>+20đ</strong>).' +
         '</p>' +
         '<div class="table-wrapper">' +
           '<table class="data-table penalty-legend-table">' +
@@ -173,7 +178,8 @@
       allPredictions,
       allMatches,
       getCurrentGroupStartDate(),
-      selectedStageKeys
+      selectedStageKeys,
+      allChampionPredictions
     );
     renderLeaderboardTable(rows, allPredictions, allMatches, allPlayers);
   }
@@ -191,6 +197,7 @@
       allMatches = matches;
       allPlayers = getActivePlayers(predResult.activeUsers || []);
       allPredictions = predResult.predictions || [];
+      allChampionPredictions = predResult.championPredictions || [];
 
       refreshLeaderboard();
       initReminderBanner(session, {

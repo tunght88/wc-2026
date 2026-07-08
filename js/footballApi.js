@@ -108,6 +108,92 @@ function isHopeStarActive(value) {
 const HOPE_STAR_CORRECT_MULTIPLIER = 1;
 const HOPE_STAR_WRONG_MULTIPLIER = 2;
 
+const CHAMPION_WRONG_PENALTY = 10;
+const CHAMPION_CORRECT_PENALTY = -20;
+const CHAMPION_STAR_MULTIPLIER = 2;
+
+function computeChampionPenaltyPoints(championPick, actualChampion, hopeStar) {
+  const mult = hopeStar ? CHAMPION_STAR_MULTIPLIER : 1;
+  if (!actualChampion) return null;
+  if (!championPick || !championPick.teamId) return CHAMPION_WRONG_PENALTY * mult;
+  if (String(championPick.teamId) === String(actualChampion.id)) {
+    return CHAMPION_CORRECT_PENALTY * mult;
+  }
+  return CHAMPION_WRONG_PENALTY * mult;
+}
+
+function buildChampionPickMap(championPredictions) {
+  const map = {};
+  (championPredictions || []).forEach(function (pick) {
+    map[pick.username] = pick;
+  });
+  return map;
+}
+
+function getChampionTeamFromMatches(matches) {
+  const final = (matches || []).find(function (m) {
+    return m.stage === 'FINAL' && m.status === 'FINISHED';
+  });
+  if (!final) return null;
+
+  if (final.score && final.score.winner) {
+    const winner = mapWinnerToPrediction(final.score.winner);
+    if (winner === 'HOME') {
+      return { id: final.homeTeam.id, name: final.homeTeam.name };
+    }
+    if (winner === 'AWAY') {
+      return { id: final.awayTeam.id, name: final.awayTeam.name };
+    }
+  }
+
+  if (final.score && final.score.fullTime) {
+    const ft = getScoreGoals(final.score.fullTime);
+    if (
+      ft.home !== null &&
+      ft.home !== undefined &&
+      ft.away !== null &&
+      ft.away !== undefined &&
+      ft.home !== ft.away
+    ) {
+      return ft.home > ft.away
+        ? { id: final.homeTeam.id, name: final.homeTeam.name }
+        : { id: final.awayTeam.id, name: final.awayTeam.name };
+    }
+  }
+
+  const actual = getActualResult(final);
+  if (actual === 'HOME') return { id: final.homeTeam.id, name: final.homeTeam.name };
+  if (actual === 'AWAY') return { id: final.awayTeam.id, name: final.awayTeam.name };
+  return null;
+}
+
+function extractTeamsFromMatches(matches) {
+  const teamMap = {};
+  (matches || []).forEach(function (match) {
+    if (match.homeTeam && match.homeTeam.id) {
+      teamMap[match.homeTeam.id] = match.homeTeam;
+    }
+    if (match.awayTeam && match.awayTeam.id) {
+      teamMap[match.awayTeam.id] = match.awayTeam;
+    }
+  });
+  return Object.values(teamMap).sort(function (a, b) {
+    return (a.name || '').localeCompare(b.name || '', 'vi');
+  });
+}
+
+function getChampionPredictionLockTime(matches, startDate) {
+  const eligible = filterMatchesForGroup(matches || [], startDate);
+  if (!eligible.length) return null;
+  return sortMatchesByDate(eligible)[0].utcDate;
+}
+
+function isChampionPredictionLocked(matches, startDate) {
+  const lockTime = getChampionPredictionLockTime(matches, startDate);
+  if (!lockTime) return false;
+  return Date.now() >= new Date(lockTime).getTime();
+}
+
 function computeMatchPenaltyPoints(match, prediction, hopeStar) {
   const basePenalty = getStagePenalty(match.stage);
   if (!prediction) return basePenalty;
@@ -256,16 +342,15 @@ function createLeaderboardEntry(user) {
   };
 }
 
-function computeLeaderboard(activeUsers, predictions, matches, startDate, stageFilterKeys) {
+function computeLeaderboard(activeUsers, predictions, matches, startDate, stageFilterKeys, championPredictions) {
   const scores = {};
   activeUsers.forEach(function (user) {
     scores[user.username] = createLeaderboardEntry(user);
   });
 
   const predMap = buildPredictionMap(predictions);
-  let finishedMatches = getFinishedMatchesWithResult(
-    filterMatchesForGroup(matches, startDate)
-  );
+  const groupMatches = filterMatchesForGroup(matches, startDate);
+  let finishedMatches = getFinishedMatchesWithResult(groupMatches);
 
   if (stageFilterKeys) {
     finishedMatches = filterMatchesByLeaderboardStages(finishedMatches, stageFilterKeys);
@@ -297,6 +382,19 @@ function computeLeaderboard(activeUsers, predictions, matches, startDate, stageF
       }
     });
   });
+
+  const actualChampion = getChampionTeamFromMatches(groupMatches);
+  if (actualChampion && championPredictions) {
+    const championPickMap = buildChampionPickMap(championPredictions);
+    activeUsers.forEach(function (user) {
+      const pick = championPickMap[user.username];
+      const hopeStar = pick && isHopeStarActive(pick.hopeStar);
+      const penalty = computeChampionPenaltyPoints(pick, actualChampion, hopeStar);
+      if (penalty !== null) {
+        scores[user.username].penalties += penalty;
+      }
+    });
+  }
 
   return Object.values(scores).sort(function (a, b) {
     if (a.penalties !== b.penalties) return a.penalties - b.penalties;

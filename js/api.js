@@ -49,6 +49,17 @@ async function savePrediction(username, passwordHash, groupId, matchId, predicti
   });
 }
 
+async function saveChampionPrediction(username, passwordHash, groupId, teamId, teamName, hopeStar) {
+  return postAction('saveChampionPrediction', {
+    username,
+    passwordHash,
+    groupId,
+    teamId,
+    teamName,
+    hopeStar: !!hopeStar,
+  });
+}
+
 async function getPredictions(username, passwordHash, groupId) {
   return postAction('getPredictions', { username, passwordHash, groupId });
 }

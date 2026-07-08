@@ -109,6 +109,7 @@
 
       const groupMatches = filterMatchesForGroup(matches, getCurrentGroupStartDate());
       const predictions = predResult.predictions || [];
+      const championPredictions = predResult.championPredictions || [];
       const players = getActivePlayers(predResult.activeUsers || []);
       const myPreds = predictions.filter(function (p) {
         return p.username === session.username;
@@ -192,6 +193,52 @@
           sortDate: new Date(match.utcDate).getTime(),
         });
       });
+
+      const myChampionPick = championPredictions.find(function (pick) {
+        return pick.username === session.username;
+      });
+      const actualChampion = getChampionTeamFromMatches(groupMatches);
+      const championHopeStar = myChampionPick && isHopeStarActive(myChampionPick.hopeStar);
+
+      if (actualChampion) {
+        const championPenalty = computeChampionPenaltyPoints(
+          myChampionPick,
+          actualChampion,
+          championHopeStar
+        );
+        if (championPenalty !== null) {
+          stats.penalties += championPenalty;
+        }
+
+        let championBadge = '<span class="badge badge-wrong">✗ Sai</span>';
+        if (myChampionPick && String(myChampionPick.teamId) === String(actualChampion.id)) {
+          championBadge = '<span class="badge badge-correct">✓ Đúng</span>';
+        } else if (!myChampionPick) {
+          championBadge = '<span class="badge badge-wrong">Chưa dự đoán</span>';
+        }
+
+        rows.push({
+          matchLabel: '🏆 Dự đoán đội vô địch',
+          date: 'Chung kết',
+          myPrediction: myChampionPick
+            ? myChampionPick.teamName + (championHopeStar ? ' ⭐' : '')
+            : 'Chưa dự đoán',
+          actualResult: actualChampion.name,
+          resultBadge: championBadge,
+          penaltyLabel: formatPenaltyLabel(championPenalty),
+          sortDate: Number.MAX_SAFE_INTEGER,
+        });
+      } else if (myChampionPick) {
+        rows.push({
+          matchLabel: '🏆 Dự đoán đội vô địch',
+          date: 'Chờ chung kết',
+          myPrediction: myChampionPick.teamName + (championHopeStar ? ' ⭐' : ''),
+          actualResult: 'Chưa có kết quả',
+          resultBadge: '<span class="badge badge-pending">Chờ kết quả</span>',
+          penaltyLabel: '-',
+          sortDate: Number.MAX_SAFE_INTEGER,
+        });
+      }
 
       rows.sort(function (a, b) {
         return a.sortDate - b.sortDate;

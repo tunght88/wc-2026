@@ -8,6 +8,7 @@
 
   let allMatches = [];
   let allPredictions = [];
+  let allChampionPredictions = [];
   let userPredMap = {};
   let activePlayers = [];
 
@@ -209,7 +210,9 @@
       activePlayers,
       allPredictions,
       allMatches,
-      groupStart
+      groupStart,
+      null,
+      allChampionPredictions
     );
     const achievements = computeUserAchievements(
       session.username,
@@ -244,6 +247,7 @@
 
       allMatches = matches;
       allPredictions = predResult.predictions || [];
+      allChampionPredictions = predResult.championPredictions || [];
       activePlayers = getActivePlayers(predResult.activeUsers || []);
       userPredMap = buildUserPredictionMap(allPredictions, session.username);
 

@@ -5,6 +5,7 @@ const GROUPS_SHEET = 'Groups';
 const GROUP_MEMBERS_SHEET = 'GroupMembers';
 const MATCH_INSIGHTS_SHEET = 'MatchInsights';
 const MATCHES_SHEET = 'Matches';
+const CHAMPION_PREDICTIONS_SHEET = 'ChampionPredictions';
 const DEFAULT_COMPETITION = 'WC';
 const DEFAULT_SEASON = '2026';
 const DEFAULT_GROUP_ID = 'group1';
@@ -43,6 +44,8 @@ function handleRequest(e) {
         return corsResponse(JSON.stringify(handleSavePrediction(payload)));
       case 'getPredictions':
         return corsResponse(JSON.stringify(handleGetPredictions(payload)));
+      case 'saveChampionPrediction':
+        return corsResponse(JSON.stringify(handleSaveChampionPrediction(payload)));
       case 'getUsers':
         return corsResponse(JSON.stringify(handleGetUsers(payload)));
       case 'createUser':
@@ -107,6 +110,30 @@ function getUsersSheet() {
 
 function getPredictionsSheet() {
   return getSpreadsheet().getSheetByName(PREDICTIONS_SHEET);
+}
+
+function getChampionPredictionsSheet() {
+  return ensureChampionPredictionsSheet();
+}
+
+function ensureChampionPredictionsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(CHAMPION_PREDICTIONS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(CHAMPION_PREDICTIONS_SHEET);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet
+      .getRange(1, 1, 1, 6)
+      .setValues([
+        ['group_id', 'username', 'team_id', 'team_name', 'hope_star', 'updated_at'],
+      ])
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
 }
 
 function getGroupsSheet() {
@@ -1137,7 +1164,121 @@ function handleGetPredictions(payload) {
     });
   }
 
-  return { success: true, predictions: predictions, activeUsers: activeUsers };
+  return { success: true, predictions: predictions, activeUsers: activeUsers, championPredictions: readChampionPredictionsForGroup(groupId) };
+}
+
+function readChampionPredictionsForGroup(groupId) {
+  var sheet = getChampionPredictionsSheet();
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  var predictions = [];
+
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0] || !groupIdsMatch(data[i][0], groupId)) continue;
+    predictions.push({
+      username: String(data[i][1]),
+      teamId: String(data[i][2]),
+      teamName: String(data[i][3]),
+      hopeStar: String(data[i][4] || '').toUpperCase() === 'TRUE',
+      updatedAt: String(data[i][5] || ''),
+    });
+  }
+
+  return predictions;
+}
+
+function isChampionPredictionOpen(groupId) {
+  try {
+    var data = footballApiGet(
+      '/competitions/' + DEFAULT_COMPETITION + '/matches?season=' + DEFAULT_SEASON
+    );
+    var matches = data.matches || [];
+    var group = getGroupById(groupId);
+    var startDate = group ? group.startDate : '';
+    var eligible = [];
+
+    for (var i = 0; i < matches.length; i++) {
+      if (isMatchOnOrAfterGroupStart(matches[i], startDate)) {
+        eligible.push(matches[i]);
+      }
+    }
+
+    if (!eligible.length) return true;
+
+    eligible.sort(function (a, b) {
+      return new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime();
+    });
+
+    return new Date() < new Date(eligible[0].utcDate);
+  } catch (err) {
+    return false;
+  }
+}
+
+function handleSaveChampionPrediction(payload) {
+  var username = sanitizeUsername(payload.username);
+  var passwordHash = String(payload.passwordHash || '');
+  var groupId = sanitizeGroupId(payload.groupId);
+  var teamId = String(payload.teamId || '');
+  var teamName = String(payload.teamName || '').trim();
+  var hopeStar =
+    payload.hopeStar === true || String(payload.hopeStar || '').toUpperCase() === 'TRUE';
+
+  if (!username || !passwordHash || !groupId || !teamId || !teamName) {
+    return { success: false, message: 'Thiếu thông tin dự đoán vô địch' };
+  }
+
+  var auth = verifyUser(username, passwordHash);
+  if (!auth.valid) {
+    return { success: false, message: auth.message };
+  }
+
+  var groupAuth = verifyGroupMembership(username, groupId);
+  if (!groupAuth.valid) {
+    return { success: false, message: groupAuth.message };
+  }
+
+  var canonicalGroup = getGroupById(groupId);
+  if (!canonicalGroup) {
+    return { success: false, message: 'Nhóm không tồn tại' };
+  }
+
+  if (!isChampionPredictionOpen(canonicalGroup.groupId)) {
+    return { success: false, message: 'Đã khóa dự đoán vô địch - giải đã bắt đầu' };
+  }
+
+  var sheet = getChampionPredictionsSheet();
+  var data = sheet.getDataRange().getValues();
+  var now = new Date().toISOString();
+  var foundRow = -1;
+
+  for (var i = 1; i < data.length; i++) {
+    if (
+      groupIdsMatch(data[i][0], canonicalGroup.groupId) &&
+      String(data[i][1]) === username
+    ) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 3).setValue(teamId);
+    sheet.getRange(foundRow, 4).setValue(teamName);
+    sheet.getRange(foundRow, 5).setValue(hopeStar ? 'TRUE' : '');
+    sheet.getRange(foundRow, 6).setValue(now);
+  } else {
+    sheet.appendRow([
+      canonicalGroup.groupId,
+      username,
+      teamId,
+      teamName,
+      hopeStar ? 'TRUE' : '',
+      now,
+    ]);
+  }
+
+  return { success: true, message: 'Đã lưu dự đoán vô địch' };
 }
 
 function getActivePlayers() {
